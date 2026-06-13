@@ -739,7 +739,7 @@ public class KeyDeriver {
 }
 EOF
     javac -cp "$FAT_JAR" "$TEMP_JAVA_DIR/KeyDeriver.java"
-    PRIVATE_KEY=$(java -cp "$TEMP_JAVA_DIR:$FAT_JAR" KeyDeriver "$SEED_BASE58" 2>/dev/null)
+    PRIVATE_KEY=$(java -cp "$TEMP_JAVA_DIR:$FAT_JAR" KeyDeriver "$SEED_BASE58" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
     rm -rf "$TEMP_JAVA_DIR"
   fi
 
@@ -799,7 +799,7 @@ public class HashGenerator {
 EOF
 
   javac -cp "$FAT_JAR" "$TEMP_JAVA_DIR/HashGenerator.java"
-  API_KEY_HASH=$(java -cp "$TEMP_JAVA_DIR:$FAT_JAR" HashGenerator "$REST_API_KEY")
+  API_KEY_HASH=$(java -cp "$TEMP_JAVA_DIR:$FAT_JAR" HashGenerator "$REST_API_KEY" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
   rm -rf "$TEMP_JAVA_DIR"
 
   if [ -z "$API_KEY_HASH" ]; then
@@ -1044,14 +1044,15 @@ echo -e "This will request certificates and automatically configure HTTPS redire
 echo
 
 sudo certbot --nginx \\
-  -d nodes.$BASE_DOMAIN \\
-  -d matcher.$BASE_DOMAIN \\
-  -d rpc.$BASE_DOMAIN \\
-  -d grpc-dex.$BASE_DOMAIN \\
-  -d grpc-updates.$BASE_DOMAIN \\
+  -d nodes.\$BASE_DOMAIN \\
+  -d matcher.\$BASE_DOMAIN \\
+  -d rpc.\$BASE_DOMAIN \\
+  -d grpc-dex.\$BASE_DOMAIN \\
+  -d grpc-updates.\$BASE_DOMAIN \\
+  --expand \\
   --non-interactive \\
   --agree-tos \\
-  -m $CERTBOT_EMAIL
+  -m \$CERTBOT_EMAIL
 
 if [ \$? -eq 0 ]; then
   echo
