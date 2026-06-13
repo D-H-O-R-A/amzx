@@ -794,7 +794,7 @@ public class KeyDeriver {
         if (either.isRight()) {
             com.wavesplatform.account.SeedKeyPair kp = (com.wavesplatform.account.SeedKeyPair) either.right().get();
             String base58PrivKey = com.wavesplatform.common.utils.Base58$.MODULE$.encode(kp.privateKey().arr());
-            System.out.println(base58PrivKey);
+            System.out.println("RESULT_KEY:" + base58PrivKey);
         } else {
             System.err.println("Error deriving key");
             System.exit(1);
@@ -803,7 +803,7 @@ public class KeyDeriver {
 }
 EOF
     javac -cp "$FAT_JAR" "$TEMP_JAVA_DIR/KeyDeriver.java"
-    PRIVATE_KEY=$(java -cp "$TEMP_JAVA_DIR:$FAT_JAR" KeyDeriver "$SEED_BASE58" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+    PRIVATE_KEY=$(java -cp "$TEMP_JAVA_DIR:$FAT_JAR" KeyDeriver "$SEED_BASE58" 2>/dev/null | grep "RESULT_KEY:" | cut -d':' -f2 | tr -d '[:space:]')
     rm -rf "$TEMP_JAVA_DIR"
   fi
 
