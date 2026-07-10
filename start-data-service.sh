@@ -505,9 +505,14 @@ if command -v docker &> /dev/null; then
       # Wait for postgres to accept connections before booting NodeJS
       echo -e "⏳ ${CYAN}Waiting for PostgreSQL to be healthy and accept connections...${NC}"
       for i in {1..20}; do
+        # Verify internal readiness inside the container AND external TCP port responsiveness on localhost
         if docker exec amzx-postgres pg_isready -U "$PGUSER" -d "$PGDATABASE" &>/dev/null; then
-          echo -e "✅ ${GREEN}PostgreSQL is healthy and accepting connections!${NC}"
-          break
+          if timeout 1 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/$PGPORT" 2>/dev/null; then
+            # Cooldown to ensure Postgres finishes all internal connection handshakes
+            sleep 2
+            echo -e "✅ ${GREEN}PostgreSQL is healthy and accepting TCP connections on port $PGPORT!${NC}"
+            break
+          fi
         fi
         sleep 1.5
       done
