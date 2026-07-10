@@ -560,7 +560,6 @@ if command -v docker &> /dev/null; then
         exit 1
       fi
     fi
-  fi
 
   # Run Diesel DB migrations to create all database tables
   echo -e "🚀 ${CYAN}Running database migrations via Diesel...${NC}"
