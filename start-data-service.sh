@@ -282,8 +282,8 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "🔥 ${GREEN}Booting AMZX Data Service Indexer Daemon in background...${NC}"
 
-# Launch process with nohup natively
-nohup npm run dev > "$LOG_FILE" 2>&1 &
+# Launch process with nohup natively (direct node call to avoid npm child-process SIGHUP signals)
+NODE_ENV=development LOG_LEVEL=debug nohup node dist/index.js > "$LOG_FILE" 2>&1 &
 SERVICE_PID=$!
 
 # Save PID to file
