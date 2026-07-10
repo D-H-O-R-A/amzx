@@ -220,6 +220,23 @@ if [ "$INTERACTIVE_MODE" = true ]; then
   echo
   export PGPASSWORD=${INPUT_PGPASSWORD:-$PGPASSWORD}
 
+  # Check if postgres volume exists and offer reset
+  if command -v docker &>/dev/null; then
+    if docker volume ls -q | grep -q "^amzx-postgres-data$"; then
+      echo -e "\n⚠️  ${YELLOW}${BOLD}Warning: A persistent PostgreSQL volume 'amzx-postgres-data' already exists.${NC}"
+      echo -e "If you are changing the password, reusing the old volume may cause password authentication to fail."
+      read -p "Do you want to reset the database volume and start fresh? [y/N]: " RESET_VOLUME
+      RESET_VOLUME=${RESET_VOLUME:-n}
+      if [[ "$RESET_VOLUME" =~ ^[Yy]$ ]]; then
+        echo -e "🧹 ${CYAN}Cleaning up existing PostgreSQL database volume...${NC}"
+        docker stop amzx-postgres &>/dev/null
+        docker rm amzx-postgres &>/dev/null
+        docker volume rm amzx-postgres-data &>/dev/null
+        echo -e "✅ ${GREEN}PostgreSQL volume deleted successfully! A fresh database will be initialized.${NC}"
+      fi
+    fi
+  fi
+
   # Matcher and Rebranding Settings
   read -p "Enter Matcher Public Key [$DEFAULT_MATCHER]: " INPUT_MATCHER
   export DEFAULT_MATCHER=${INPUT_MATCHER:-$DEFAULT_MATCHER}
