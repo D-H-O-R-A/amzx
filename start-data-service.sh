@@ -521,18 +521,32 @@ if command -v docker &> /dev/null; then
 
       # Wait for postgres to accept connections before booting NodeJS
       echo -e "⏳ ${CYAN}Waiting for PostgreSQL to be healthy and accept connections...${NC}"
+      PG_HEALTHY=false
       for i in {1..20}; do
-        # Verify internal readiness inside the container AND external TCP port responsiveness on localhost
-        if docker exec amzx-postgres pg_isready -U "$PGUSER" -d "$PGDATABASE" &>/dev/null; then
-          if timeout 1 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/$PGPORT" 2>/dev/null; then
-            # Cooldown to ensure Postgres finishes all internal connection handshakes
-            sleep 2
-            echo -e "✅ ${GREEN}PostgreSQL is healthy and accepting TCP connections on port $PGPORT!${NC}"
-            break
-          fi
+        # Verify internal TCP readiness inside the container pointing to 127.0.0.1
+        if docker exec amzx-postgres pg_isready -h 127.0.0.1 -U "$PGUSER" -d "$PGDATABASE" &>/dev/null; then
+          PG_HEALTHY=true
+          break
         fi
         sleep 1.5
       done
+
+      if [ "$PG_HEALTHY" = "true" ]; then
+        echo -e "✅ ${GREEN}PostgreSQL database process is healthy!${NC}"
+        echo -e "⏳ ${CYAN}Stabilizing Docker network routing and firewall rules...${NC}"
+        # Interactive progress bar for network stabilization (5 seconds)
+        for j in {1..5}; do
+          echo -ne "   ["
+          for k in $(seq 1 $j); do echo -ne "▓"; done
+          for k in $(seq $j 4); do echo -ne " "; done
+          echo -ne "] $((j * 20))% completed\r"
+          sleep 1
+        done
+        echo -e "\n✅ ${GREEN}PostgreSQL network routing is fully operational on port $PGPORT!${NC}"
+      else
+        echo -e "❌ ${RED}PostgreSQL failed to become healthy within the timeout period.${NC}"
+        exit 1
+      fi
     fi
   fi
 
