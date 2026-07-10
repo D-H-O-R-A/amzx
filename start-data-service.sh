@@ -200,9 +200,20 @@ server {
     listen 80;
     server_name $SUBDOMAIN;
 
-    # 1. API Endpoints - Route directly to NodeJS Data Service (Port 3000) with optional /v0/ prefix removed
-    location ~ ^/(v0/)?(assets|pairs|transactions|candles|aliases|matchers|version) {
-        rewrite ^/v0/(.*)$ /$1 break;
+    # 1. API Endpoints WITH /v0/ prefix (Nginx automatically strips /v0/ and proxies remaining URI)
+    location /v0/ {
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # 2. API Endpoints WITHOUT /v0/ prefix (Direct proxy to NodeJS)
+    location ~ ^/(assets|pairs|transactions|candles|aliases|matchers|version) {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
