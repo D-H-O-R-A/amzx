@@ -217,6 +217,23 @@ case "$1" in
 esac
 
 # ------------------------------------------------------------------------------
+# 0. LOAD PERSISTED ENVIRONMENT VARIABLES IF FILE EXISTS
+# ------------------------------------------------------------------------------
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ -f "$ENV_FILE" ]; then
+  echo -e "📖 \033[0;32mLoading configuration from .env file...\033[0m"
+  # Read variables safely without triggering commands or errors
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Skip comments and empty lines
+    if [[ ! "$line" =~ ^# && ! -z "$line" ]]; then
+      # Strip outer quotes if any, and export
+      clean_line=$(echo "$line" | sed -e 's/^export //g' -e 's/"//g' -e "s/'//g")
+      export "$clean_line"
+    fi
+  done < "$ENV_FILE"
+fi
+
+# ------------------------------------------------------------------------------
 # 1. INITIALIZE SANE DEFAULT VALUES
 # ------------------------------------------------------------------------------
 export PORT=${PORT:-3000}
@@ -323,6 +340,23 @@ if [ "$INTERACTIVE_MODE" = true ]; then
   fi
 
   echo -e "\n${GREEN}✓ Configuration parameters loaded successfully!${NC}\n"
+
+  # Save variables to .env file for future non-interactive runs
+  cat <<EOF > "$ENV_FILE"
+PGHOST="$PGHOST"
+PGPORT="$PGPORT"
+PGDATABASE="$PGDATABASE"
+PGUSER="$PGUSER"
+PGPASSWORD="$PGPASSWORD"
+DEFAULT_MATCHER="$DEFAULT_MATCHER"
+BLOCKCHAIN_UPDATES_URL="$BLOCKCHAIN_UPDATES_URL"
+CHAIN_ID_DEC="$CHAIN_ID_DEC"
+STARTING_HEIGHT="$STARTING_HEIGHT"
+USE_DOCKER_SYNC="$USE_DOCKER_SYNC"
+RATE_THRESHOLD_ASSET_ID="$RATE_THRESHOLD_ASSET_ID"
+RATE_BASE_ASSET_ID="$RATE_BASE_ASSET_ID"
+EOF
+  echo -e "💾 \033[0;32mConfigurations persisted to .env file successfully!\033[0m"
 
   # Nginx & Certbot SSL Configuration Question
   read -p "Do you want to configure Nginx Reverse Proxy & Certbot SSL for the Data Service? [y/N]: " CONFIGURE_NGINX
@@ -449,6 +483,39 @@ export POSTGRES__PASSWORD="$PGPASSWORD"
 export BLOCKCHAIN_UPDATES_URL="$BLOCKCHAIN_UPDATES_URL"
 export CHAIN_ID=$CHAIN_ID_DEC
 export STARTING_HEIGHT=$STARTING_HEIGHT
+
+# ------------------------------------------------------------------------------
+# 3. VERIFY AND AUTOMATICALLY UPGRADE NODE.JS TO VERSION 18
+# ------------------------------------------------------------------------------
+NODE_VERSION_REQ="18"
+if ! command -v node &> /dev/null; then
+  CURRENT_NODE_MAJOR=0
+else
+  CURRENT_NODE_MAJOR=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+fi
+
+if [ "$CURRENT_NODE_MAJOR" -lt "$NODE_VERSION_REQ" ]; then
+  if [ "$EUID" -eq 0 ]; then
+    echo -e "📦 \033[0;33mNode.js version ($CURRENT_NODE_MAJOR) is outdated or missing. Requirements: >= v18.\033[0m"
+    echo -e "🚀 \033[0;36mAutomatically upgrading Node.js to v18.x via NodeSource...\033[0m"
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - &>/dev/null
+    apt-get install -y nodejs &>/dev/null
+    if [ $? -eq 0 ]; then
+      echo -e "✅ \033[0;32mNode.js successfully upgraded to version $(node -v)!\033[0m"
+      # Clean old node_modules and compiled output to prevent native V8/Node v10 engine crashes
+      if [ -d "$DATA_SERVICE_DIR/node_modules" ]; then
+        echo -e "🧹 \033[0;33mCleaning up old Node v10 node_modules to guarantee native engine compatibility...\033[0m"
+        rm -rf "$DATA_SERVICE_DIR/node_modules"
+        rm -rf "$DATA_SERVICE_DIR/dist"
+      fi
+    else
+      echo -e "❌ \033[0;31mFailed to automatically upgrade Node.js. Please install Node.js >= v18 manually.\033[0m"
+    fi
+  else
+    echo -e "⚠️  \033[0;31mNode.js version ($CURRENT_NODE_MAJOR) is too low (Requirements: >= v18). Please run as root or upgrade manually.\033[0m"
+    exit 1
+  fi
+fi
 
 cd "$DATA_SERVICE_DIR" || {
   echo -e "❌ ${RED}Error: data-service directory not found at $DATA_SERVICE_DIR${NC}"
