@@ -54,6 +54,14 @@ stop_service() {
       docker rm amzx-swagger &>/dev/null
       echo -e "✅ ${GREEN}amzx-swagger Docker container stopped and removed.${NC}"
     fi
+
+    # Stop Postgres Docker container if running
+    if docker ps -a --format '{{.Names}}' | grep -q "^amzx-postgres$"; then
+      echo -e "🛑 ${YELLOW}Stopping and removing amzx-postgres database Docker container...${NC}"
+      docker stop amzx-postgres &>/dev/null
+      docker rm amzx-postgres &>/dev/null
+      echo -e "✅ ${GREEN}amzx-postgres Docker container stopped and removed.${NC}"
+    fi
   fi
 }
 
@@ -357,6 +365,50 @@ if command -v docker &> /dev/null; then
   fi
 else
   echo -e "⚠️  ${YELLOW}Docker not found. Swagger UI container will not be automatically launched.${NC}"
+fi
+
+# ------------------------------------------------------------------------------
+# 4.1 LAUNCH POSTGRESQL DOCKER CONTAINER (Port 5432)
+# ------------------------------------------------------------------------------
+if command -v docker &> /dev/null; then
+  # Only attempt to manage local database container if PGHOST points to localhost
+  if [[ "$PGHOST" == "127.0.0.1" || "$PGHOST" == "localhost" ]]; then
+    echo -e "🐳 ${CYAN}Checking PostgreSQL Docker container (Port 5432)...${NC}"
+    
+    # Check if port 5432 is already used by a native service on the host
+    if ss -tulpn 2>/dev/null | grep -q ":5432 "; then
+      echo -e "⚠️  ${YELLOW}Port 5432 is already occupied by a native database service on host. Skipping container creation.${NC}"
+    else
+      # If the container already exists but is stopped, restart it
+      if docker ps -a --format '{{.Names}}' | grep -q "^amzx-postgres$"; then
+        echo -e "🔄 ${CYAN}Restarting existing amzx-postgres Docker container...${NC}"
+        docker start amzx-postgres &>/dev/null
+      else
+        echo -e "📦 ${CYAN}Creating and launching new amzx-postgres Docker container...${NC}"
+        docker run -d \
+          --name amzx-postgres \
+          -p 5432:5432 \
+          -e POSTGRES_DB="$PGDATABASE" \
+          -e POSTGRES_USER="$PGUSER" \
+          -e POSTGRES_PASSWORD="$PGPASSWORD" \
+          -v amzx-postgres-data:/var/lib/postgresql/data \
+          --restart unless-stopped \
+          postgres:14-alpine &>/dev/null
+      fi
+
+      # Wait for postgres to accept connections before booting NodeJS
+      echo -e "⏳ ${CYAN}Waiting for PostgreSQL to be healthy and accept connections...${NC}"
+      for i in {1..20}; do
+        if docker exec amzx-postgres pg_isready -U "$PGUSER" -d "$PGDATABASE" &>/dev/null; then
+          echo -e "✅ ${GREEN}PostgreSQL is healthy and accepting connections!${NC}"
+          break
+        fi
+        sleep 1.5
+      done
+    fi
+  fi
+else
+  echo -e "⚠️  ${YELLOW}Docker not found. PostgreSQL container will not be automatically launched.${NC}"
 fi
 
 # ------------------------------------------------------------------------------
