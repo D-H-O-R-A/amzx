@@ -25,35 +25,51 @@ if [[ "$1" == "--setup" || "$1" == "-i" || "$1" == "--interactive" ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 1. INTERACTIVE SETUP FLOW (If requested)
+# 1. INITIALIZE SANE DEFAULT VALUES (Global fallback state)
+# ------------------------------------------------------------------------------
+export PORT=${PORT:-3000}
+export PGHOST=${PGHOST:-"127.0.0.1"}
+export PGPORT=${PGPORT:-"5432"}
+export PGDATABASE=${PGDATABASE:-"amzx_db"}
+export PGUSER=${PGUSER:-"postgres"}
+export PGPASSWORD=${PGPASSWORD:-"postgres"}
+export LOG_LEVEL=${LOG_LEVEL:-"info"}
+
+export DEFAULT_MATCHER=${DEFAULT_MATCHER:-"2eEUvypDSivnzPiLrbYEW39SM8yMZ1aq4eJuiKfs4sEY"}
+export RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD:-1}
+export RATE_THRESHOLD_ASSET_ID=${RATE_THRESHOLD_ASSET_ID:-"AMZX"}
+export RATE_BASE_ASSET_ID=${RATE_BASE_ASSET_ID:-"AMZX"}
+
+# ------------------------------------------------------------------------------
+# 2. INTERACTIVE CONFIGURATION FLOW (Overrides default state)
 # ------------------------------------------------------------------------------
 if [ "$INTERACTIVE_MODE" = true ]; then
   echo -e "${YELLOW}Entering interactive configuration mode...${NC}\n"
 
   # PostgreSQL Settings
-  read -p "Enter PostgreSQL Host [127.0.0.1]: " INPUT_PGHOST
-  export PGHOST=${INPUT_PGHOST:-"127.0.0.1"}
+  read -p "Enter PostgreSQL Host [$PGHOST]: " INPUT_PGHOST
+  export PGHOST=${INPUT_PGHOST:-$PGHOST}
 
-  read -p "Enter PostgreSQL Port [5432]: " INPUT_PGPORT
-  export PGPORT=${INPUT_PGPORT:-"5432"}
+  read -p "Enter PostgreSQL Port [$PGPORT]: " INPUT_PGPORT
+  export PGPORT=${INPUT_PGPORT:-$PGPORT}
 
-  read -p "Enter PostgreSQL Database Name [amzx_db]: " INPUT_PGDATABASE
-  export PGDATABASE=${INPUT_PGDATABASE:-"amzx_db"}
+  read -p "Enter PostgreSQL Database Name [$PGDATABASE]: " INPUT_PGDATABASE
+  export PGDATABASE=${INPUT_PGDATABASE:-$PGDATABASE}
 
-  read -p "Enter PostgreSQL Username [postgres]: " INPUT_PGUSER
-  export PGUSER=${INPUT_PGUSER:-"postgres"}
+  read -p "Enter PostgreSQL Username [$PGUSER]: " INPUT_PGUSER
+  export PGUSER=${INPUT_PGUSER:-$PGUSER}
 
-  read -s -p "Enter PostgreSQL Password [postgres]: " INPUT_PGPASSWORD
+  read -s -p "Enter PostgreSQL Password [$PGPASSWORD]: " INPUT_PGPASSWORD
   echo
-  export PGPASSWORD=${INPUT_PGPASSWORD:-"postgres"}
+  export PGPASSWORD=${INPUT_PGPASSWORD:-$PGPASSWORD}
 
-  # Matcher and Rebranding
-  read -p "Enter Matcher Public Key [2eEUvypDSivnzPiLrbYEW39SM8yMZ1aq4eJuiKfs4sEY]: " INPUT_MATCHER
-  export DEFAULT_MATCHER=${INPUT_MATCHER:-"2eEUvypDSivnzPiLrbYEW39SM8yMZ1aq4eJuiKfs4sEY"}
+  # Matcher and Rebranding Settings
+  read -p "Enter Matcher Public Key [$DEFAULT_MATCHER]: " INPUT_MATCHER
+  export DEFAULT_MATCHER=${INPUT_MATCHER:-$DEFAULT_MATCHER}
 
-  read -p "Enter Native Token Ticker [AMZX]: " INPUT_TICKER
-  export RATE_THRESHOLD_ASSET_ID=${INPUT_TICKER:-"AMZX"}
-  export RATE_BASE_ASSET_ID=${INPUT_TICKER:-"AMZX"}
+  read -p "Enter Native Token Ticker [$RATE_BASE_ASSET_ID]: " INPUT_TICKER
+  export RATE_THRESHOLD_ASSET_ID=${INPUT_TICKER:-$RATE_THRESHOLD_ASSET_ID}
+  export RATE_BASE_ASSET_ID=${INPUT_TICKER:-$RATE_BASE_ASSET_ID}
 
   echo -e "\n${GREEN}✓ Configuration parameters loaded successfully!${NC}\n"
 
@@ -130,31 +146,29 @@ EOF
     fi
   fi
 else
-  # ------------------------------------------------------------------------------
-  # 2. DEFAULT SILENT / ENVIRONMENT LOADING (Non-Interactive)
-  # ------------------------------------------------------------------------------
-  export PORT=${PORT:-3000}
-  export PGHOST=${PGHOST:-"127.0.0.1"}
-  export PGPORT=${PGPORT:-"5432"}
-  export PGDATABASE=${PGDATABASE:-"amzx_db"}
-  export PGUSER=${PGUSER:-"postgres"}
-  export PGPASSWORD=${PGPASSWORD:-"postgres"}
-  export DEFAULT_MATCHER=${DEFAULT_MATCHER:-"2eEUvypDSivnzPiLrbYEW39SM8yMZ1aq4eJuiKfs4sEY"}
-  export RATE_THRESHOLD_ASSET_ID=${RATE_THRESHOLD_ASSET_ID:-"AMZX"}
-  export RATE_BASE_ASSET_ID=${RATE_BASE_ASSET_ID:-"AMZX"}
-
   echo -e "⚙️  Running in silent mode. Sane configurations loaded."
   echo -e "   Run with ${YELLOW}--setup${NC} or ${YELLOW}--interactive${NC} to enter interactive mode."
 fi
 
 # ------------------------------------------------------------------------------
-# 3. SERVICE LAUNCHER
+# 3. VERIFY & EXPORT ABSOLUTE MANDATORY ENV VARIABLES
 # ------------------------------------------------------------------------------
+# We enforce explicitly exporting all 7 critical environment variables verified by loadConfig.ts
+export PGHOST="$PGHOST"
+export PGDATABASE="$PGDATABASE"
+export PGUSER="$PGUSER"
+export PGPASSWORD="$PGPASSWORD"
+export DEFAULT_MATCHER="$DEFAULT_MATCHER"
+export RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD:-1}
+export RATE_THRESHOLD_ASSET_ID="$RATE_THRESHOLD_ASSET_ID"
+export RATE_BASE_ASSET_ID="$RATE_BASE_ASSET_ID"
+
 echo -e "\n📋 Configuration Loaded:"
-echo -e "  - REST API Port:              ${GREEN}$PORT${NC}"
-echo -e "  - PostgreSQL Connection:      ${GREEN}$PGUSER@$PGHOST:$PGPORT/$PGDATABASE${NC}"
-echo -e "  - Default Matcher Address:    ${GREEN}$DEFAULT_MATCHER${NC}"
-echo -e "  - Native Token Ticker:        ${GREEN}$RATE_BASE_ASSET_ID${NC}"
+echo -e "  - REST API Port:                          ${GREEN}$PORT${NC}"
+echo -e "  - PostgreSQL Connection:                  ${GREEN}$PGUSER@$PGHOST:$PGPORT/$PGDATABASE${NC}"
+echo -e "  - Default Matcher Address:                ${GREEN}$DEFAULT_MATCHER${NC}"
+echo -e "  - Native Token Ticker:                    ${GREEN}$RATE_BASE_ASSET_ID${NC}"
+echo -e "  - Rate Pair Acceptance Volume Threshold:  ${GREEN}$RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD${NC}"
 echo
 
 cd "$DATA_SERVICE_DIR" || {
