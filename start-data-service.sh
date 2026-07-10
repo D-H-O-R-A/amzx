@@ -559,18 +559,31 @@ if command -v docker &> /dev/null; then
   export POSTGRES__PASSWORD="$PGPASSWORD"
 
   if [ "$USE_DOCKER_SYNC" = "true" ]; then
-    docker run --rm \
-      --net=host \
-      -e POSTGRES__HOST="$POSTGRES__HOST" \
-      -e POSTGRES__PORT="$POSTGRES__PORT" \
-      -e POSTGRES__DATABASE="$POSTGRES__DATABASE" \
-      -e POSTGRES__USER="$POSTGRES__USER" \
-      -e POSTGRES__PASSWORD="$POSTGRES__PASSWORD" \
-      amzx-blockchain-sync:latest ./migration up
-    if [ $? -eq 0 ]; then
+    MIGRATION_SUCCESS=false
+    for r in {1..5}; do
+      echo -e "🚀 ${CYAN}Running database migrations via Diesel (Attempt $r/5)...${NC}"
+      docker run --rm \
+        --net=host \
+        -e POSTGRES__HOST="$POSTGRES__HOST" \
+        -e POSTGRES__PORT="$POSTGRES__PORT" \
+        -e POSTGRES__DATABASE="$POSTGRES__DATABASE" \
+        -e POSTGRES__USER="$POSTGRES__USER" \
+        -e POSTGRES__PASSWORD="$POSTGRES__PASSWORD" \
+        amzx-blockchain-sync:latest ./migration up
+      if [ $? -eq 0 ]; then
+        MIGRATION_SUCCESS=true
+        break
+      fi
+      if [ $r -lt 5 ]; then
+        echo -e "⚠️  ${YELLOW}Migration attempt $r failed due to Docker network lag. Retrying in 4 seconds...${NC}"
+        sleep 4
+      fi
+    done
+
+    if [ "$MIGRATION_SUCCESS" = "true" ]; then
       echo -e "✅ ${GREEN}Database schema created/updated successfully inside Docker!${NC}"
     else
-      echo -e "❌ ${RED}Database migration failed inside Docker.${NC}"
+      echo -e "❌ ${RED}Database migration failed inside Docker after multiple attempts.${NC}"
     fi
   else
     cd "$SYNC_DIR" || exit 1
