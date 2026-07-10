@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # AMZX DATA SERVICE SERVICE DAEMON & CONFIGURATION WIZARD
-# Supports: start, stop, status, restart, --setup, and interactive modes natively
+# Unified API Indexer (Port 3000) & Swagger UI (Port 8080) Route Router Daemon
 # ==============================================================================
 
 # ANSI Color Codes
@@ -17,10 +17,9 @@ DATA_SERVICE_DIR="$SCRIPT_DIR/amzx-data-service"
 PID_FILE="$SCRIPT_DIR/data-service.pid"
 LOG_FILE="$DATA_SERVICE_DIR/data-service.log"
 
-# Function to print the banner header
 print_header() {
   echo -e "${CYAN}==============================================================================${NC}"
-  echo -e "${CYAN}${BOLD}             🔷  AMZX BLOCKCHAIN DATA SERVICE INDEXER WIZARD  🔷${NC}"
+  echo -e "${CYAN}${BOLD}    🔷  AMZX UNIFIED DATA SERVICE & SWAGGER UI CONFIGURATION WIZARD  🔷${NC}"
   echo -e "${CYAN}==============================================================================${NC}"
 }
 
@@ -28,38 +27,58 @@ print_header() {
 # COMMAND ROUTING: STOP / STATUS / RESTART
 # ------------------------------------------------------------------------------
 stop_service() {
+  # Stop node process
   if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")
     if kill -0 "$PID" 2>/dev/null; then
-      echo -e "🛑 ${YELLOW}Stopping AMZX Data Service (PID: $PID)...${NC}"
+      echo -e "🛑 ${YELLOW}Stopping AMZX Data Service Indexer (PID: $PID)...${NC}"
       kill "$PID"
       sleep 2
-      # Double check if killed, otherwise force kill
       if kill -0 "$PID" 2>/dev/null; then
         kill -9 "$PID"
       fi
-      echo -e "✅ ${GREEN}AMZX Data Service stopped successfully.${NC}"
+      echo -e "✅ ${GREEN}Indexer stopped successfully.${NC}"
     else
-      echo -e "⚠️  ${YELLOW}Service PID $PID found in file but process is not running. Cleaning up PID file...${NC}"
+      echo -e "⚠️  ${YELLOW}PID $PID not running. Cleaning up PID file...${NC}"
     fi
     rm -f "$PID_FILE"
   else
-    echo -e "⚠️  ${YELLOW}No active AMZX Data Service PID file found. Is it running?${NC}"
+    echo -e "⚠️  ${YELLOW}No active Indexer PID file found.${NC}"
+  fi
+
+  # Stop Swagger Docker container if running
+  if command -v docker &> /dev/null; then
+    if docker ps -a --format '{{.Names}}' | grep -q "^amzx-swagger$"; then
+      echo -e "🛑 ${YELLOW}Stopping and removing amzx-swagger UI Docker container...${NC}"
+      docker stop amzx-swagger &>/dev/null
+      docker rm amzx-swagger &>/dev/null
+      echo -e "✅ ${GREEN}amzx-swagger Docker container stopped and removed.${NC}"
+    fi
   fi
 }
 
 status_service() {
+  # Indexer Status
   if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")
     if kill -0 "$PID" 2>/dev/null; then
-      echo -e "🟢 ${GREEN}${BOLD}AMZX Data Service is RUNNING in background.${NC}"
-      echo -e "  - PID:  ${CYAN}$PID${NC}"
-      echo -e "  - Logs: ${CYAN}tail -f amzx-data-service/data-service.log${NC}"
+      echo -e "🟢 ${GREEN}${BOLD}AMZX Data Service Indexer is RUNNING (PID: $PID).${NC}"
     else
-      echo -e "🔴 ${RED}AMZX Data Service PID file exists ($PID) but process is DEAD.${NC}"
+      echo -e "🔴 ${RED}AMZX Data Service Indexer PID exists ($PID) but process is DEAD.${NC}"
     fi
   else
-    echo -e "⚪ ${YELLOW}AMZX Data Service is STOPPED.${NC}"
+    echo -e "⚪ ${YELLOW}AMZX Data Service Indexer is STOPPED.${NC}"
+  fi
+
+  # Swagger Docker Status
+  if command -v docker &> /dev/null; then
+    if docker ps --format '{{.Names}}' | grep -q "^amzx-swagger$"; then
+      echo -e "🟢 ${GREEN}${BOLD}Swagger UI Docker Container is RUNNING on internal port 8080.${NC}"
+    else
+      echo -e "⚪ ${YELLOW}Swagger UI Docker Container is STOPPED/NOT INSTALLED.${NC}"
+    fi
+  else
+    echo -e "⚠️  ${RED}Docker is not installed on this system.${NC}"
   fi
 }
 
@@ -79,15 +98,14 @@ case "$1" in
     print_header
     stop_service
     echo
-    # Continue to execute the start flow
+    # Continue execution for start flow
     ;;
   *)
-    # Default execution mode (start / --setup)
     ;;
 esac
 
 # ------------------------------------------------------------------------------
-# 1. INITIALIZE SANE DEFAULT VALUES (Global fallback state)
+# 1. INITIALIZE SANE DEFAULT VALUES
 # ------------------------------------------------------------------------------
 export PORT=${PORT:-3000}
 export PGHOST=${PGHOST:-"127.0.0.1"}
@@ -114,7 +132,6 @@ if [ -f "$PID_FILE" ]; then
   fi
 fi
 
-# Check if running with interactive flags
 INTERACTIVE_MODE=false
 if [[ "$1" == "--setup" || "$1" == "-i" || "$1" == "--interactive" ]]; then
   INTERACTIVE_MODE=true
@@ -123,7 +140,7 @@ fi
 print_header
 
 # ------------------------------------------------------------------------------
-# 2. INTERACTIVE CONFIGURATION FLOW (Overrides default state)
+# 2. INTERACTIVE CONFIGURATION FLOW
 # ------------------------------------------------------------------------------
 if [ "$INTERACTIVE_MODE" = true ]; then
   echo -e "${YELLOW}Entering interactive configuration mode...${NC}\n"
@@ -173,16 +190,31 @@ if [ "$INTERACTIVE_MODE" = true ]; then
         SUBDOMAIN="data-service.$BASE_DOMAIN"
         NGINX_CONF="/etc/nginx/sites-available/amzx-data-service.conf"
 
-        echo -e "\n⚙️  ${CYAN}Creating Nginx reverse proxy configuration for $SUBDOMAIN...${NC}"
+        echo -e "\n⚙️  ${CYAN}Creating Unified Nginx reverse proxy configuration for $SUBDOMAIN...${NC}"
+        echo -e "    -> Routing API endpoints to Node Data-Service (Port 3000)"
+        echo -e "    -> Routing root '/' and Assets to Swagger UI (Port 8080)"
         
         cat <<EOF > "$NGINX_CONF"
-# AMZX Data Service Indexer Proxy
+# AMZX Data Service & Swagger UI Unified Router Proxy
 server {
     listen 80;
     server_name $SUBDOMAIN;
 
-    location / {
+    # 1. API Endpoints - Route directly to NodeJS Data Service (Port 3000)
+    location ~ ^/(assets|pairs|transactions|candles|aliases|matchers|version) {
         proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # 2. Unified Root '/' and UI Assets - Route directly to Swagger UI Container (Port 8080)
+    location / {
+        proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -213,7 +245,7 @@ EOF
               -m "$CERTBOT_EMAIL"
             
             if [ $? -eq 0 ]; then
-              echo -e "🎉 ${GREEN}${BOLD}SSL Certificate active! Your secure indexer is live at: https://$SUBDOMAIN/docs${NC}"
+              echo -e "🎉 ${GREEN}${BOLD}SSL Certificate active! Secure routing is live!${NC}"
             else
               echo -e "❌ ${RED}Certbot failed to acquire SSL certificates. Please check DNS propagation.${NC}"
             fi
@@ -244,14 +276,6 @@ export RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=${RATE_PAIR_ACCEPTANCE_VOLUME_THRES
 export RATE_THRESHOLD_ASSET_ID="$RATE_THRESHOLD_ASSET_ID"
 export RATE_BASE_ASSET_ID="$RATE_BASE_ASSET_ID"
 
-echo -e "\n📋 Configuration Loaded:"
-echo -e "  - REST API Port:                          ${GREEN}$PORT${NC}"
-echo -e "  - PostgreSQL Connection:                  ${GREEN}$PGUSER@$PGHOST:$PGPORT/$PGDATABASE${NC}"
-echo -e "  - Default Matcher Address:                ${GREEN}$DEFAULT_MATCHER${NC}"
-echo -e "  - Native Token Ticker:                    ${GREEN}$RATE_BASE_ASSET_ID${NC}"
-echo -e "  - Rate Pair Acceptance Volume Threshold:  ${GREEN}$RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD${NC}"
-echo
-
 cd "$DATA_SERVICE_DIR" || {
   echo -e "❌ ${RED}Error: data-service directory not found at $DATA_SERVICE_DIR${NC}"
   exit 1
@@ -278,7 +302,37 @@ if [ ! -d "dist" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 4. START NATIVE DAEMON PROCESS IN BACKGROUND
+# 4. LAUNCH SWAGGER UI DOCKER CONTAINER (Port 8080)
+# ------------------------------------------------------------------------------
+if command -v docker &> /dev/null; then
+  echo -e "🐳 ${CYAN}Checking Swagger UI Docker container (Port 8080)...${NC}"
+  
+  # Clean up existing container if it exists
+  if docker ps -a --format '{{.Names}}' | grep -q "^amzx-swagger$"; then
+    docker stop amzx-swagger &>/dev/null
+    docker rm amzx-swagger &>/dev/null
+  fi
+
+  # Start the container pointing to the compiled openapi.json file
+  docker run -d \
+    --name amzx-swagger \
+    -p 127.0.0.1:8080:8080 \
+    -v "$DATA_SERVICE_DIR/docs/openapi.json:/app/openapi.json" \
+    -e SWAGGER_JSON=/app/openapi.json \
+    --restart unless-stopped \
+    swaggerapi/swagger-ui:v4.15.5 &>/dev/null
+
+  if [ $? -eq 0 ]; then
+    echo -e "✅ ${GREEN}Swagger UI container booted successfully in background (Port 8080).${NC}"
+  else
+    echo -e "⚠️  ${YELLOW}Failed to start Swagger UI container. Please check Docker daemon permissions.${NC}"
+  fi
+else
+  echo -e "⚠️  ${YELLOW}Docker not found. Swagger UI container will not be automatically launched.${NC}"
+fi
+
+# ------------------------------------------------------------------------------
+# 5. START NATIVE DAEMON PROCESS IN BACKGROUND (Port 3000)
 # ------------------------------------------------------------------------------
 echo -e "🔥 ${GREEN}Booting AMZX Data Service Indexer Daemon in background...${NC}"
 
@@ -289,13 +343,17 @@ SERVICE_PID=$!
 # Save PID to file
 echo "$SERVICE_PID" > "$PID_FILE"
 
-# Give Node.js 1 second to start and check if it's still alive
+# Give Node.js 1.5 seconds to start and check if it's still alive
 sleep 1.5
 if kill -0 "$SERVICE_PID" 2>/dev/null; then
   echo -e "\n🎉 ${GREEN}${BOLD}AMZX Data Service is now running in background!${NC}"
   echo -e "  - Process PID:       ${CYAN}$SERVICE_PID${NC}"
   echo -e "  - Process PID File:  ${CYAN}data-service.pid${NC}"
   echo -e "  - Active Log File:   ${CYAN}amzx-data-service/data-service.log${NC}"
+  echo
+  echo -e "🛡️  ${GREEN}${BOLD}Unified Domain Routing active on https://data-service.planetone.io${NC}"
+  echo -e "  - Acessar ${CYAN}https://data-service.planetone.io/${NC}      👉 Servirá o Swagger UI interativo gráfico!"
+  echo -e "  - Acessar ${CYAN}https://data-service.planetone.io/assets${NC} 👉 Servirá os dados reais da API indexados!"
   echo
   echo -e "📋 Useful Daemon Commands:"
   echo -e "  - Monitor logs in real-time:  ${CYAN}tail -f amzx-data-service/data-service.log${NC}"
