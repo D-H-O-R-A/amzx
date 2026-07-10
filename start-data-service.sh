@@ -606,6 +606,7 @@ if [ "$USE_DOCKER_SYNC" = "true" ]; then
     -e BLOCKCHAIN_UPDATES_URL="$BLOCKCHAIN_UPDATES_URL" \
     -e CHAIN_ID=$CHAIN_ID_DEC \
     -e STARTING_HEIGHT=$STARTING_HEIGHT \
+    -e RUST_LOG="${RUST_LOG:-info}" \
     --restart unless-stopped \
     amzx-blockchain-sync:latest >/dev/null
   
