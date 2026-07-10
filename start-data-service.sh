@@ -200,8 +200,8 @@ server {
     listen 80;
     server_name $SUBDOMAIN;
 
-    # 1. API Endpoints - Route directly to NodeJS Data Service (Port 3000)
-    location ~ ^/(assets|pairs|transactions|candles|aliases|matchers|version) {
+    # 1. API Endpoints - Route directly to NodeJS Data Service (Port 3000) with optional /v0/ prefix
+    location ~ ^/(v0/)?(assets|pairs|transactions|candles|aliases|matchers|version) {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
