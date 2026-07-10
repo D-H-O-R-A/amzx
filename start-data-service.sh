@@ -580,23 +580,24 @@ if command -v docker &> /dev/null; then
       echo -e "✅ ${GREEN}Port 5432 released successfully!${NC}"
     fi
 
-    # If the container already exists but is stopped, restart it
+    # Clean up existing container if it exists to ensure it uses the new network configuration
     if docker ps -a --format '{{.Names}}' | grep -q "^amzx-postgres$"; then
-      echo -e "🔄 ${CYAN}Restarting existing amzx-postgres Docker container...${NC}"
-      docker start amzx-postgres &>/dev/null
-    else
-      echo -e "📦 ${CYAN}Creating and launching new amzx-postgres Docker container on amzx-network...${NC}"
-      docker run -d \
-        --name amzx-postgres \
-        --network amzx-network \
-        -p 5432:5432 \
-        -e POSTGRES_DB="$PGDATABASE" \
-        -e POSTGRES_USER="$PGUSER" \
-        -e POSTGRES_PASSWORD="$PGPASSWORD" \
-        -v amzx-postgres-data:/var/lib/postgresql/data \
-        --restart unless-stopped \
-        postgres:14-alpine &>/dev/null
+      echo -e "🔄 ${CYAN}Reconfiguring existing amzx-postgres Docker container to use amzx-network...${NC}"
+      docker stop amzx-postgres &>/dev/null
+      docker rm amzx-postgres &>/dev/null
     fi
+
+    echo -e "📦 ${CYAN}Creating and launching new amzx-postgres Docker container on amzx-network...${NC}"
+    docker run -d \
+      --name amzx-postgres \
+      --network amzx-network \
+      -p 5432:5432 \
+      -e POSTGRES_DB="$PGDATABASE" \
+      -e POSTGRES_USER="$PGUSER" \
+      -e POSTGRES_PASSWORD="$PGPASSWORD" \
+      -v amzx-postgres-data:/var/lib/postgresql/data \
+      --restart unless-stopped \
+      postgres:14-alpine &>/dev/null
 
       # Wait for postgres to accept connections before booting NodeJS
       echo -e "⏳ ${CYAN}Waiting for PostgreSQL to be healthy and accept connections...${NC}"
@@ -630,23 +631,35 @@ if command -v docker &> /dev/null; then
 
   # Run Diesel DB migrations to create all database tables
   echo -e "🚀 ${CYAN}Running database migrations via Diesel...${NC}"
-  export POSTGRES__HOST="$PGHOST"
+  
+  # Default settings for local native processes (like Node.js Indexer)
+  export POSTGRES__HOST="127.0.0.1"
   export POSTGRES__PORT="$PGPORT"
   export POSTGRES__DATABASE="$PGDATABASE"
   export POSTGRES__USER="$PGUSER"
   export POSTGRES__PASSWORD="$PGPASSWORD"
 
   if [ "$USE_DOCKER_SYNC" = "true" ]; then
+    # Fetch PostgreSQL Container IP on amzx-network to force pure TCP connection
+    DB_CONTAINER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' amzx-postgres 2>/dev/null)
+    if [ -z "$DB_CONTAINER_IP" ]; then
+      DB_CONTAINER_IP="amzx-postgres"
+    fi
+    
+    # Formulate robust numerical connection URL (forces libpq to use pure TCP)
+    CONTAINER_DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@$DB_CONTAINER_IP:5432/$PGDATABASE"
+
     MIGRATION_SUCCESS=false
     for r in {1..5}; do
-      echo -e "🚀 ${CYAN}Running database migrations via Diesel (Attempt $r/5)...${NC}"
+      echo -e "🚀 ${CYAN}Running database migrations via Diesel (Attempt $r/5) [Targeting $DB_CONTAINER_IP via TCP]...${NC}"
       docker run --rm \
         --network amzx-network \
-        -e POSTGRES__HOST="amzx-postgres" \
-        -e POSTGRES__PORT="$POSTGRES__PORT" \
-        -e POSTGRES__DATABASE="$POSTGRES__DATABASE" \
-        -e POSTGRES__USER="$POSTGRES__USER" \
-        -e POSTGRES__PASSWORD="$POSTGRES__PASSWORD" \
+        -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
+        -e POSTGRES__HOST="$DB_CONTAINER_IP" \
+        -e POSTGRES__PORT="5432" \
+        -e POSTGRES__DATABASE="$PGDATABASE" \
+        -e POSTGRES__USER="$PGUSER" \
+        -e POSTGRES__PASSWORD="$PGPASSWORD" \
         amzx-blockchain-sync:latest ./migration up
       if [ $? -eq 0 ]; then
         MIGRATION_SUCCESS=true
@@ -692,15 +705,25 @@ if [ "$USE_DOCKER_SYNC" = "true" ]; then
     CONTAINER_UPDATES_URL=$(echo "$CONTAINER_UPDATES_URL" | sed -e 's/127.0.0.1/host.docker.internal/g' -e 's/localhost/host.docker.internal/g')
   fi
 
+  # Fetch PostgreSQL Container IP on amzx-network to force pure TCP connection
+  DB_CONTAINER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' amzx-postgres 2>/dev/null)
+  if [ -z "$DB_CONTAINER_IP" ]; then
+    DB_CONTAINER_IP="amzx-postgres"
+  fi
+  
+  # Formulate robust numerical connection URL (forces libpq to use pure TCP)
+  CONTAINER_DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@$DB_CONTAINER_IP:5432/$PGDATABASE"
+
   docker run -d \
     --name amzx-blockchain-sync \
     --network amzx-network \
     --add-host=host.docker.internal:host-gateway \
-    -e POSTGRES__HOST="amzx-postgres" \
-    -e POSTGRES__PORT="$POSTGRES__PORT" \
-    -e POSTGRES__DATABASE="$POSTGRES__DATABASE" \
-    -e POSTGRES__USER="$POSTGRES__USER" \
-    -e POSTGRES__PASSWORD="$POSTGRES__PASSWORD" \
+    -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
+    -e POSTGRES__HOST="$DB_CONTAINER_IP" \
+    -e POSTGRES__PORT="5432" \
+    -e POSTGRES__DATABASE="$PGDATABASE" \
+    -e POSTGRES__USER="$PGUSER" \
+    -e POSTGRES__PASSWORD="$PGPASSWORD" \
     -e BLOCKCHAIN_UPDATES_URL="$CONTAINER_UPDATES_URL" \
     -e CHAIN_ID=$CHAIN_ID_DEC \
     -e STARTING_HEIGHT=$STARTING_HEIGHT \
