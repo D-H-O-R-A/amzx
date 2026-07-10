@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../../src/db/__test__/mocks/index.js"],"names":[],"mappings":";AAAA,MAAM,YAAY,GAAG,OAAO,CAAC,UAAU,CAAC,CAAC;AAEzC,MAAM,IAAI,GAAG,OAAO,CAAC,2BAA2B,CAAC,CAAC;AAElD,MAAM,CAAC,OAAO,GAAG;IACf,MAAM,EAAE;QACN,MAAM,EAAE,YAAY;QACpB,OAAO,EAAE,YAAY,CAAC,IAAI,CAAC,EAAE,CAAC;KAC/B;CACF,CAAC"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"resultToTask.js","sourceRoot":"","sources":["../../../src/utils/fp/resultToTask.ts"],"names":[],"mappings":";;AAAA,oDAAyE;AAG5D,QAAA,YAAY,GAAG,CAAO,CAAe,EAAc,EAAE,CAChE,CAAC,CAAC,SAAS,CAAC;IACV,EAAE,EAAE,CAAC,EAAE,KAAK,EAAE,EAAE,EAAE,CAAC,SAAM,CAAO,KAAK,CAAC;IACtC,KAAK,EAAE,CAAC,EAAE,KAAK,EAAE,EAAE,EAAE,CAAC,eAAQ,CAAO,KAAK,CAAC;CAC5C,CAAC,CAAC"}

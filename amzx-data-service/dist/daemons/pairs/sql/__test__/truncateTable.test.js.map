@@ -1,0 +1,1 @@
+{"version":3,"file":"truncateTable.test.js","sourceRoot":"","sources":["../../../../../src/daemons/pairs/sql/__test__/truncateTable.test.ts"],"names":[],"mappings":";;AAAA,oDAAiD;AAEjD,QAAQ,CAAC,uBAAuB,EAAE,GAAG,EAAE;IACrC,EAAE,CAAC,gBAAgB,EAAE,GAAG,EAAE;QACxB,MAAM,CAAC,6BAAa,CAAC,OAAO,CAAC,CAAC,CAAC,eAAe,EAAE,CAAC;IACnD,CAAC,CAAC,CAAC;AACL,CAAC,CAAC,CAAC"}
