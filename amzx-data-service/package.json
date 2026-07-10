@@ -8,9 +8,9 @@
   "license": "MIT",
   "scripts": {
     "build": "rm -rf dist/ && ./node_modules/.bin/tsc",
-    "start": "NODE_PG_FORCE_NATIVE=1 node dist/index.js",
-    "dev": "NODE_PG_FORCE_NATIVE=1 NODE_ENV=development LOG_LEVEL=debug node dist/index.js",
-    "pairs": "NODE_PG_FORCE_NATIVE=1 node dist/daemons/pairs/index.js",
+    "start": "node dist/index.js",
+    "dev": "NODE_ENV=development LOG_LEVEL=debug node dist/index.js",
+    "pairs": "node dist/daemons/pairs/index.js",
     "lint": "eslint src",
     "test": "jest --runInBand --detectOpenHandles --config=config/jest.config.unit.json",
     "test:i": "export $(cat variables.env | xargs) && jest --runInBand --detectOpenHandles --config=config/jest.config.integration.json",
