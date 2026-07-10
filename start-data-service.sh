@@ -522,9 +522,17 @@ cd "$DATA_SERVICE_DIR" || {
   exit 1
 }
 
-# Verify dependencies
+# Verify dependencies (or trigger update if package.json has changed)
+FORCE_REINSTALL=false
+if [ -d "node_modules" ] && [ "package.json" -nt "node_modules" ]; then
+  echo -e "🔄 \033[0;33mpackage.json has changed. Cleaning and updating dependencies...\033[0m"
+  rm -rf node_modules
+  rm -rf dist
+  FORCE_REINSTALL=true
+fi
+
 if [ ! -d "node_modules" ]; then
-  echo -e "📦 ${YELLOW}node_modules not found. Installing package dependencies...${NC}"
+  echo -e "📦 ${YELLOW}Installing package dependencies (pure JS drivers)...${NC}"
   npm install --legacy-peer-deps --ignore-scripts
   if [ $? -ne 0 ]; then
     echo -e "❌ ${RED}Failed to install npm packages.${NC}"
@@ -532,9 +540,10 @@ if [ ! -d "node_modules" ]; then
   fi
 fi
 
-# Build project from TypeScript to JavaScript
-if [ ! -d "dist" ]; then
+# Build project from TypeScript to JavaScript (or rebuild if reinstalled)
+if [ ! -d "dist" ] || [ "$FORCE_REINSTALL" = "true" ]; then
   echo -e "🛠️  ${YELLOW}Building TypeScript sources...${NC}"
+  rm -rf dist
   npm run build
   if [ $? -ne 0 ]; then
     echo -e "❌ ${RED}Failed to compile TypeScript sources.${NC}"
