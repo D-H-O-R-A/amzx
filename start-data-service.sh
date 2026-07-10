@@ -304,6 +304,22 @@ fi
 # ------------------------------------------------------------------------------
 # 4. LAUNCH SWAGGER UI DOCKER CONTAINER (Port 8080)
 # ------------------------------------------------------------------------------
+# Auto-install Docker if missing and running with root privileges
+if ! command -v docker &> /dev/null; then
+  if [ "$EUID" -eq 0 ]; then
+    echo -e "📦 ${YELLOW}Docker is not installed. Installing Docker CE automatically via APT...${NC}"
+    apt-get update -y &>/dev/null
+    apt-get install -y docker.io &>/dev/null
+    if command -v docker &> /dev/null; then
+      systemctl start docker &>/dev/null
+      systemctl enable docker &>/dev/null
+      echo -e "✅ ${GREEN}Docker installed and daemon started successfully!${NC}"
+    else
+      echo -e "❌ ${RED}Failed to automatically install Docker. Swagger UI cannot be loaded.${NC}"
+    fi
+  fi
+fi
+
 if command -v docker &> /dev/null; then
   echo -e "🐳 ${CYAN}Checking Swagger UI Docker container (Port 8080)...${NC}"
   
