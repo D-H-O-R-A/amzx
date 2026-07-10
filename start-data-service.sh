@@ -587,17 +587,13 @@ if command -v docker &> /dev/null; then
       docker rm amzx-postgres &>/dev/null
     fi
 
-    # Create shared Unix Socket directory with full permissions on host
-    SOCKET_DIR="/tmp/amzx-postgres"
-    mkdir -p "$SOCKET_DIR" &>/dev/null
-    chmod 777 "$SOCKET_DIR" &>/dev/null
-
     echo -e "📦 ${CYAN}Creating and launching new amzx-postgres Docker container on amzx-network...${NC}"
     docker run -d \
       --name amzx-postgres \
       --network amzx-network \
+      --network-alias amzx-postgres \
+      --hostname amzx-postgres \
       -p 5432:5432 \
-      -v "$SOCKET_DIR:/var/run/postgresql" \
       -e POSTGRES_DB="$PGDATABASE" \
       -e POSTGRES_USER="$PGUSER" \
       -e POSTGRES_PASSWORD="$PGPASSWORD" \
@@ -646,21 +642,16 @@ if command -v docker &> /dev/null; then
   export POSTGRES__PASSWORD="$PGPASSWORD"
 
   if [ "$USE_DOCKER_SYNC" = "true" ]; then
-    # Shared Unix Socket directory on host
-    SOCKET_DIR="/tmp/amzx-postgres"
-
-    # Formulate robust Unix Socket connection URL for Diesel/libpq
-    CONTAINER_DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@/$PGDATABASE?host=/var/run/postgresql"
+    # Formulate robust TCP connection URL for the Diesel container within Docker Network
+    CONTAINER_DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@amzx-postgres:5432/$PGDATABASE"
 
     MIGRATION_SUCCESS=false
     for r in {1..5}; do
-      echo -e "🚀 ${CYAN}Running database migrations via Diesel (Attempt $r/5) [Targeting Unix Socket]...${NC}"
+      echo -e "🚀 ${CYAN}Running database migrations via Diesel (Attempt $r/5) [Targeting amzx-postgres via TCP]...${NC}"
       docker run --rm \
         --network amzx-network \
-        -v "$SOCKET_DIR:/var/run/postgresql" \
-        -e PGHOST="/var/run/postgresql" \
         -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
-        -e POSTGRES__HOST="/var/run/postgresql" \
+        -e POSTGRES__HOST="amzx-postgres" \
         -e POSTGRES__PORT="5432" \
         -e POSTGRES__DATABASE="$PGDATABASE" \
         -e POSTGRES__USER="$PGUSER" \
@@ -710,20 +701,15 @@ if [ "$USE_DOCKER_SYNC" = "true" ]; then
     CONTAINER_UPDATES_URL=$(echo "$CONTAINER_UPDATES_URL" | sed -e 's/127.0.0.1/host.docker.internal/g' -e 's/localhost/host.docker.internal/g')
   fi
 
-  # Shared Unix Socket directory on host
-  SOCKET_DIR="/tmp/amzx-postgres"
-  
-  # Formulate robust Unix Socket connection URL for Diesel/libpq
-  CONTAINER_DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@/$PGDATABASE?host=/var/run/postgresql"
+  # Formulate robust TCP connection URL for the consumer within Docker Network
+  CONTAINER_DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@amzx-postgres:5432/$PGDATABASE"
 
   docker run -d \
     --name amzx-blockchain-sync \
     --network amzx-network \
     --add-host=host.docker.internal:host-gateway \
-    -v "$SOCKET_DIR:/var/run/postgresql" \
-    -e PGHOST="/var/run/postgresql" \
     -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
-    -e POSTGRES__HOST="/var/run/postgresql" \
+    -e POSTGRES__HOST="amzx-postgres" \
     -e POSTGRES__PORT="5432" \
     -e POSTGRES__DATABASE="$PGDATABASE" \
     -e POSTGRES__USER="$PGUSER" \
