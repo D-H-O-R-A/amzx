@@ -642,16 +642,17 @@ if command -v docker &> /dev/null; then
   export POSTGRES__PASSWORD="$PGPASSWORD"
 
   if [ "$USE_DOCKER_SYNC" = "true" ]; then
-    # Formulate robust TCP connection URL for the Diesel container within Docker Network
-    CONTAINER_DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@amzx-postgres:5432/$PGDATABASE"
+    # Formulate robust TCP connection URL via Host Gateway to bypass any bridge forwarding restrictions
+    CONTAINER_DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@host.docker.internal:5432/$PGDATABASE"
 
     MIGRATION_SUCCESS=false
     for r in {1..5}; do
-      echo -e "🚀 ${CYAN}Running database migrations via Diesel (Attempt $r/5) [Targeting amzx-postgres via TCP]...${NC}"
+      echo -e "🚀 ${CYAN}Running database migrations via Diesel (Attempt $r/5) [Targeting host.docker.internal via TCP]...${NC}"
       docker run --rm \
         --network amzx-network \
+        --add-host=host.docker.internal:host-gateway \
         -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
-        -e POSTGRES__HOST="amzx-postgres" \
+        -e POSTGRES__HOST="host.docker.internal" \
         -e POSTGRES__PORT="5432" \
         -e POSTGRES__DATABASE="$PGDATABASE" \
         -e POSTGRES__USER="$PGUSER" \
@@ -701,15 +702,15 @@ if [ "$USE_DOCKER_SYNC" = "true" ]; then
     CONTAINER_UPDATES_URL=$(echo "$CONTAINER_UPDATES_URL" | sed -e 's/127.0.0.1/host.docker.internal/g' -e 's/localhost/host.docker.internal/g')
   fi
 
-  # Formulate robust TCP connection URL for the consumer within Docker Network
-  CONTAINER_DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@amzx-postgres:5432/$PGDATABASE"
+  # Formulate robust TCP connection URL via Host Gateway to bypass any bridge forwarding restrictions
+  CONTAINER_DATABASE_URL="postgres://$PGUSER:$PGPASSWORD@host.docker.internal:5432/$PGDATABASE"
 
   docker run -d \
     --name amzx-blockchain-sync \
     --network amzx-network \
     --add-host=host.docker.internal:host-gateway \
     -e DATABASE_URL="$CONTAINER_DATABASE_URL" \
-    -e POSTGRES__HOST="amzx-postgres" \
+    -e POSTGRES__HOST="host.docker.internal" \
     -e POSTGRES__PORT="5432" \
     -e POSTGRES__DATABASE="$PGDATABASE" \
     -e POSTGRES__USER="$PGUSER" \
