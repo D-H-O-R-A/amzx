@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# AMZX DATA SERVICE LAUNCHER & CONFIGURATION WIZARD (Interactive & Non-Interactive)
+# AMZX DATA SERVICE SERVICE DAEMON & CONFIGURATION WIZARD
+# Supports: start, stop, status, restart, --setup, and interactive modes natively
 # ==============================================================================
 
 # ANSI Color Codes
@@ -13,16 +14,77 @@ NC='\033[0m'
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DATA_SERVICE_DIR="$SCRIPT_DIR/amzx-data-service"
+PID_FILE="$SCRIPT_DIR/data-service.pid"
+LOG_FILE="$DATA_SERVICE_DIR/data-service.log"
 
-echo -e "${CYAN}==============================================================================${NC}"
-echo -e "${CYAN}${BOLD}             🔷  AMZX BLOCKCHAIN DATA SERVICE INDEXER WIZARD  🔷${NC}"
-echo -e "${CYAN}==============================================================================${NC}"
+# Function to print the banner header
+print_header() {
+  echo -e "${CYAN}==============================================================================${NC}"
+  echo -e "${CYAN}${BOLD}             🔷  AMZX BLOCKCHAIN DATA SERVICE INDEXER WIZARD  🔷${NC}"
+  echo -e "${CYAN}==============================================================================${NC}"
+}
 
-# Check if running with interactive flags
-INTERACTIVE_MODE=false
-if [[ "$1" == "--setup" || "$1" == "-i" || "$1" == "--interactive" ]]; then
-  INTERACTIVE_MODE=true
-fi
+# ------------------------------------------------------------------------------
+# COMMAND ROUTING: STOP / STATUS / RESTART
+# ------------------------------------------------------------------------------
+stop_service() {
+  if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE")
+    if kill -0 "$PID" 2>/dev/null; then
+      echo -e "🛑 ${YELLOW}Stopping AMZX Data Service (PID: $PID)...${NC}"
+      kill "$PID"
+      sleep 2
+      # Double check if killed, otherwise force kill
+      if kill -0 "$PID" 2>/dev/null; then
+        kill -9 "$PID"
+      fi
+      echo -e "✅ ${GREEN}AMZX Data Service stopped successfully.${NC}"
+    else
+      echo -e "⚠️  ${YELLOW}Service PID $PID found in file but process is not running. Cleaning up PID file...${NC}"
+    fi
+    rm -f "$PID_FILE"
+  else
+    echo -e "⚠️  ${YELLOW}No active AMZX Data Service PID file found. Is it running?${NC}"
+  fi
+}
+
+status_service() {
+  if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE")
+    if kill -0 "$PID" 2>/dev/null; then
+      echo -e "🟢 ${GREEN}${BOLD}AMZX Data Service is RUNNING in background.${NC}"
+      echo -e "  - PID:  ${CYAN}$PID${NC}"
+      echo -e "  - Logs: ${CYAN}tail -f amzx-data-service/data-service.log${NC}"
+    else
+      echo -e "🔴 ${RED}AMZX Data Service PID file exists ($PID) but process is DEAD.${NC}"
+    fi
+  else
+    echo -e "⚪ ${YELLOW}AMZX Data Service is STOPPED.${NC}"
+  fi
+}
+
+# Parse command line arguments
+case "$1" in
+  stop)
+    print_header
+    stop_service
+    exit 0
+    ;;
+  status)
+    print_header
+    status_service
+    exit 0
+    ;;
+  restart)
+    print_header
+    stop_service
+    echo
+    # Continue to execute the start flow
+    ;;
+  *)
+    # Default execution mode (start / --setup)
+    ;;
+esac
 
 # ------------------------------------------------------------------------------
 # 1. INITIALIZE SANE DEFAULT VALUES (Global fallback state)
@@ -39,6 +101,26 @@ export DEFAULT_MATCHER=${DEFAULT_MATCHER:-"2eEUvypDSivnzPiLrbYEW39SM8yMZ1aq4eJui
 export RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=${RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD:-1}
 export RATE_THRESHOLD_ASSET_ID=${RATE_THRESHOLD_ASSET_ID:-"AMZX"}
 export RATE_BASE_ASSET_ID=${RATE_BASE_ASSET_ID:-"AMZX"}
+
+# Check if service is already running
+if [ -f "$PID_FILE" ]; then
+  PID=$(cat "$PID_FILE")
+  if kill -0 "$PID" 2>/dev/null; then
+    print_header
+    echo -e "⚠️  ${YELLOW}AMZX Data Service is already running in background (PID: $PID).${NC}"
+    echo -e "To restart, run: ${CYAN}./start-data-service.sh restart${NC}"
+    echo -e "To stop, run:    ${CYAN}./start-data-service.sh stop${NC}"
+    exit 0
+  fi
+fi
+
+# Check if running with interactive flags
+INTERACTIVE_MODE=false
+if [[ "$1" == "--setup" || "$1" == "-i" || "$1" == "--interactive" ]]; then
+  INTERACTIVE_MODE=true
+fi
+
+print_header
 
 # ------------------------------------------------------------------------------
 # 2. INTERACTIVE CONFIGURATION FLOW (Overrides default state)
@@ -153,7 +235,6 @@ fi
 # ------------------------------------------------------------------------------
 # 3. VERIFY & EXPORT ABSOLUTE MANDATORY ENV VARIABLES
 # ------------------------------------------------------------------------------
-# We enforce explicitly exporting all 7 critical environment variables verified by loadConfig.ts
 export PGHOST="$PGHOST"
 export PGDATABASE="$PGDATABASE"
 export PGUSER="$PGUSER"
@@ -196,5 +277,35 @@ if [ ! -d "dist" ]; then
   fi
 fi
 
-echo -e "🔥 ${GREEN}Booting AMZX Data Service Indexer Daemon...${NC}\n"
-exec npm run dev
+# ------------------------------------------------------------------------------
+# 4. START NATIVE DAEMON PROCESS IN BACKGROUND
+# ------------------------------------------------------------------------------
+echo -e "🔥 ${GREEN}Booting AMZX Data Service Indexer Daemon in background...${NC}"
+
+# Launch process with nohup natively
+nohup npm run dev > "$LOG_FILE" 2>&1 &
+SERVICE_PID=$!
+
+# Save PID to file
+echo "$SERVICE_PID" > "$PID_FILE"
+
+# Give Node.js 1 second to start and check if it's still alive
+sleep 1.5
+if kill -0 "$SERVICE_PID" 2>/dev/null; then
+  echo -e "\n🎉 ${GREEN}${BOLD}AMZX Data Service is now running in background!${NC}"
+  echo -e "  - Process PID:       ${CYAN}$SERVICE_PID${NC}"
+  echo -e "  - Process PID File:  ${CYAN}data-service.pid${NC}"
+  echo -e "  - Active Log File:   ${CYAN}amzx-data-service/data-service.log${NC}"
+  echo
+  echo -e "📋 Useful Daemon Commands:"
+  echo -e "  - Monitor logs in real-time:  ${CYAN}tail -f amzx-data-service/data-service.log${NC}"
+  echo -e "  - Check service status:       ${CYAN}./start-data-service.sh status${NC}"
+  echo -e "  - Stop background service:    ${CYAN}./start-data-service.sh stop${NC}"
+  echo -e "  - Restart background service: ${CYAN}./start-data-service.sh restart${NC}"
+  echo
+else
+  echo -e "\n❌ ${RED}Error: Service started but died immediately.${NC}"
+  echo -e "Please check the log file: ${CYAN}cat amzx-data-service/data-service.log${NC}"
+  rm -f "$PID_FILE"
+  exit 1
+fi
