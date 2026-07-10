@@ -14,8 +14,11 @@ NC='\033[0m'
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DATA_SERVICE_DIR="$SCRIPT_DIR/amzx-data-service"
+SYNC_DIR="$SCRIPT_DIR/amzx-blockchain-postgres-sync"
 PID_FILE="$SCRIPT_DIR/data-service.pid"
+PID_FILE_SYNC="$SCRIPT_DIR/blockchain-sync.pid"
 LOG_FILE="$DATA_SERVICE_DIR/data-service.log"
+LOG_FILE_SYNC="$SYNC_DIR/blockchain-sync.log"
 
 print_header() {
   echo -e "${CYAN}==============================================================================${NC}"
@@ -44,6 +47,33 @@ stop_service() {
     rm -f "$PID_FILE"
   else
     echo -e "⚠️  ${YELLOW}No active Indexer PID file found.${NC}"
+  fi
+
+  # Stop blockchain postgres sync consumer (Docker or Native process)
+  if [ -f "$PID_FILE_SYNC" ]; then
+    PID_SYNC=$(cat "$PID_FILE_SYNC")
+    if kill -0 "$PID_SYNC" 2>/dev/null; then
+      echo -e "🛑 ${YELLOW}Stopping AMZX Blockchain Postgres Sync Consumer (PID: $PID_SYNC)...${NC}"
+      kill "$PID_SYNC"
+      sleep 2
+      if kill -0 "$PID_SYNC" 2>/dev/null; then
+        kill -9 "$PID_SYNC"
+      fi
+      echo -e "✅ ${GREEN}Sync Consumer stopped successfully.${NC}"
+    else
+      echo -e "⚠️  ${YELLOW}PID $PID_SYNC not running. Cleaning up Sync PID file...${NC}"
+    fi
+    rm -f "$PID_FILE_SYNC"
+  fi
+
+  # Stop and remove blockchain sync Docker container if running
+  if command -v docker &> /dev/null; then
+    if docker ps -a --format '{{.Names}}' | grep -q "^amzx-blockchain-sync$"; then
+      echo -e "🛑 ${YELLOW}Stopping and removing amzx-blockchain-sync Docker container...${NC}"
+      docker stop amzx-blockchain-sync &>/dev/null
+      docker rm amzx-blockchain-sync &>/dev/null
+      echo -e "✅ ${GREEN}amzx-blockchain-sync Docker container stopped and removed.${NC}"
+    fi
   fi
 
   # Stop Swagger Docker container if running
@@ -76,6 +106,20 @@ status_service() {
     fi
   else
     echo -e "⚪ ${YELLOW}AMZX Data Service Indexer is STOPPED.${NC}"
+  fi
+
+  # Sync Consumer Status (Native or Docker)
+  if [ -f "$PID_FILE_SYNC" ]; then
+    PID_SYNC=$(cat "$PID_FILE_SYNC")
+    if kill -0 "$PID_SYNC" 2>/dev/null; then
+      echo -e "🟢 ${GREEN}${BOLD}AMZX Blockchain Postgres Sync Consumer is RUNNING natively (PID: $PID_SYNC).${NC}"
+    else
+      echo -e "🔴 ${RED}AMZX Blockchain Postgres Sync Consumer PID exists ($PID_SYNC) but process is DEAD.${NC}"
+    fi
+  elif command -v docker &> /dev/null && docker ps --format '{{.Names}}' | grep -q "^amzx-blockchain-sync$"; then
+    echo -e "🟢 ${GREEN}${BOLD}AMZX Blockchain Postgres Sync Consumer is RUNNING inside Docker Container.${NC}"
+  else
+    echo -e "⚪ ${YELLOW}AMZX Blockchain Postgres Sync Consumer is STOPPED.${NC}"
   fi
 
   # Swagger Docker Status
@@ -128,6 +172,12 @@ export RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=${RATE_PAIR_ACCEPTANCE_VOLUME_THRES
 export RATE_THRESHOLD_ASSET_ID=${RATE_THRESHOLD_ASSET_ID:-"AMZX"}
 export RATE_BASE_ASSET_ID=${RATE_BASE_ASSET_ID:-"AMZX"}
 
+# Blockchain Sync Configs
+export BLOCKCHAIN_UPDATES_URL=${BLOCKCHAIN_UPDATES_URL:-"http://127.0.0.1:6881"}
+export CHAIN_ID_DEC=${CHAIN_ID_DEC:-67} # ASCII 'C'
+export STARTING_HEIGHT=${STARTING_HEIGHT:-1}
+export USE_DOCKER_SYNC=${USE_DOCKER_SYNC:-"true"} # Default to Docker since native linkpq compiling needs root packages
+
 # Check if service is already running
 if [ -f "$PID_FILE" ]; then
   PID=$(cat "$PID_FILE")
@@ -177,6 +227,23 @@ if [ "$INTERACTIVE_MODE" = true ]; then
   read -p "Enter Native Token Ticker [$RATE_BASE_ASSET_ID]: " INPUT_TICKER
   export RATE_THRESHOLD_ASSET_ID=${INPUT_TICKER:-$RATE_THRESHOLD_ASSET_ID}
   export RATE_BASE_ASSET_ID=${INPUT_TICKER:-$RATE_BASE_ASSET_ID}
+
+  # Blockchain Sync Settings
+  read -p "Enter Blockchain Updates gRPC URL [$BLOCKCHAIN_UPDATES_URL]: " INPUT_UPDATES_URL
+  export BLOCKCHAIN_UPDATES_URL=${INPUT_UPDATES_URL:-$BLOCKCHAIN_UPDATES_URL}
+
+  read -p "Enter Chain ID decimal representation [$CHAIN_ID_DEC]: " INPUT_CHAIN_ID_DEC
+  export CHAIN_ID_DEC=${INPUT_CHAIN_ID_DEC:-$CHAIN_ID_DEC}
+
+  read -p "Enter starting height for synchronization [$STARTING_HEIGHT]: " INPUT_STARTING_HEIGHT
+  export STARTING_HEIGHT=${INPUT_STARTING_HEIGHT:-$STARTING_HEIGHT}
+
+  read -p "Run Sync Consumer inside Docker? [Y/n]: " INPUT_DOCKER_SYNC
+  if [[ "$INPUT_DOCKER_SYNC" =~ ^[Nn]$ ]]; then
+    export USE_DOCKER_SYNC="false"
+  else
+    export USE_DOCKER_SYNC="true"
+  fi
 
   echo -e "\n${GREEN}✓ Configuration parameters loaded successfully!${NC}\n"
 
@@ -296,6 +363,16 @@ export RATE_PAIR_ACCEPTANCE_VOLUME_THRESHOLD=${RATE_PAIR_ACCEPTANCE_VOLUME_THRES
 export RATE_THRESHOLD_ASSET_ID="$RATE_THRESHOLD_ASSET_ID"
 export RATE_BASE_ASSET_ID="$RATE_BASE_ASSET_ID"
 
+# Sync parameters
+export POSTGRES__HOST="$PGHOST"
+export POSTGRES__PORT="$PGPORT"
+export POSTGRES__DATABASE="$PGDATABASE"
+export POSTGRES__USER="$PGUSER"
+export POSTGRES__PASSWORD="$PGPASSWORD"
+export BLOCKCHAIN_UPDATES_URL="$BLOCKCHAIN_UPDATES_URL"
+export CHAIN_ID=$CHAIN_ID_DEC
+export STARTING_HEIGHT=$STARTING_HEIGHT
+
 cd "$DATA_SERVICE_DIR" || {
   echo -e "❌ ${RED}Error: data-service directory not found at $DATA_SERVICE_DIR${NC}"
   exit 1
@@ -318,6 +395,35 @@ if [ ! -d "dist" ]; then
   if [ $? -ne 0 ]; then
     echo -e "❌ ${RED}Failed to compile TypeScript sources.${NC}"
     exit 1
+  fi
+fi
+
+# Build blockchain-postgres-sync if we are running native mode
+if [ "$USE_DOCKER_SYNC" = "false" ]; then
+  if [ ! -f "$SYNC_DIR/target/release/consumer" ] || [ ! -f "$SYNC_DIR/target/release/migration" ]; then
+    echo -e "🛠️  ${YELLOW}Building blockchain-postgres-sync Rust sources (this may take a few minutes)...${NC}"
+    cd "$SYNC_DIR" || exit 1
+    cargo build --release
+    if [ $? -ne 0 ]; then
+      echo -e "❌ ${RED}Failed to compile blockchain-postgres-sync Rust sources.${NC}"
+      exit 1
+    fi
+    cd "$DATA_SERVICE_DIR" || exit 1
+  fi
+else
+  # If we are running in Docker mode, ensure image exists
+  if command -v docker &> /dev/null; then
+    if ! docker images --format '{{.Repository}}' | grep -q "^amzx-blockchain-sync$"; then
+      echo -e "🐳 ${CYAN}amzx-blockchain-sync Docker image not found.${NC}"
+      echo -e "🛠️  ${YELLOW}Building amzx-blockchain-postgres-sync Docker image (this may take a few minutes)...${NC}"
+      cd "$SYNC_DIR" || exit 1
+      docker build -t amzx-blockchain-sync:latest .
+      if [ $? -ne 0 ]; then
+        echo -e "❌ ${RED}Failed to build blockchain-postgres-sync Docker image.${NC}"
+        exit 1
+      fi
+      cd "$DATA_SERVICE_DIR" || exit 1
+    fi
   fi
 fi
 
@@ -407,14 +513,77 @@ if command -v docker &> /dev/null; then
       done
     fi
   fi
+
+  # Run Diesel DB migrations to create all database tables
+  echo -e "🚀 ${CYAN}Running database migrations via Diesel...${NC}"
+  export POSTGRES__HOST="$PGHOST"
+  export POSTGRES__PORT="$PGPORT"
+  export POSTGRES__DATABASE="$PGDATABASE"
+  export POSTGRES__USER="$PGUSER"
+  export POSTGRES__PASSWORD="$PGPASSWORD"
+
+  if [ "$USE_DOCKER_SYNC" = "true" ]; then
+    docker run --rm \
+      --net=host \
+      -e POSTGRES__HOST="$POSTGRES__HOST" \
+      -e POSTGRES__PORT="$POSTGRES__PORT" \
+      -e POSTGRES__DATABASE="$POSTGRES__DATABASE" \
+      -e POSTGRES__USER="$POSTGRES__USER" \
+      -e POSTGRES__PASSWORD="$POSTGRES__PASSWORD" \
+      amzx-blockchain-sync:latest ./migration up
+    if [ $? -eq 0 ]; then
+      echo -e "✅ ${GREEN}Database schema created/updated successfully inside Docker!${NC}"
+    else
+      echo -e "❌ ${RED}Database migration failed inside Docker.${NC}"
+    fi
+  else
+    cd "$SYNC_DIR" || exit 1
+    ./target/release/migration up
+    if [ $? -eq 0 ]; then
+      echo -e "✅ ${GREEN}Database schema created/updated successfully natively!${NC}"
+    else
+      echo -e "❌ ${RED}Database migration failed natively.${NC}"
+    fi
+    cd "$DATA_SERVICE_DIR" || exit 1
+  fi
 else
   echo -e "⚠️  ${YELLOW}Docker not found. PostgreSQL container will not be automatically launched.${NC}"
 fi
 
 # ------------------------------------------------------------------------------
-# 5. START NATIVE DAEMON PROCESS IN BACKGROUND (Port 3000)
+# 5. START SYNC CONSUMER & NATIVE DAEMON PROCESS IN BACKGROUND
 # ------------------------------------------------------------------------------
-echo -e "🔥 ${GREEN}Booting AMZX Data Service Indexer Daemon in background...${NC}"
+if [ "$USE_DOCKER_SYNC" = "true" ]; then
+  echo -e "🐳 ${GREEN}Booting AMZX Blockchain Postgres Sync Consumer inside Docker Container...${NC}"
+  
+  # Remove existing container if left over
+  docker rm -f amzx-blockchain-sync &>/dev/null
+  
+  docker run -d \
+    --name amzx-blockchain-sync \
+    --net=host \
+    -e POSTGRES__HOST="$POSTGRES__HOST" \
+    -e POSTGRES__PORT="$POSTGRES__PORT" \
+    -e POSTGRES__DATABASE="$POSTGRES__DATABASE" \
+    -e POSTGRES__USER="$POSTGRES__USER" \
+    -e POSTGRES__PASSWORD="$POSTGRES__PASSWORD" \
+    -e BLOCKCHAIN_UPDATES_URL="$BLOCKCHAIN_UPDATES_URL" \
+    -e CHAIN_ID=$CHAIN_ID_DEC \
+    -e STARTING_HEIGHT=$STARTING_HEIGHT \
+    --restart unless-stopped \
+    amzx-blockchain-sync:latest >/dev/null
+  
+  SYNC_PID="DOCKER_CONTAINER"
+else
+  echo -e "🔥 ${GREEN}Booting AMZX Blockchain Postgres Sync Consumer natively in background...${NC}"
+  cd "$SYNC_DIR" || exit 1
+  nohup ./target/release/consumer > "$LOG_FILE_SYNC" 2>&1 &
+  SYNC_PID=$!
+  echo "$SYNC_PID" > "$PID_FILE_SYNC"
+  cd "$DATA_SERVICE_DIR" || exit 1
+fi
+
+echo -e "🔥 ${GREEN}Booting AMZX Data Service Indexer Daemon natively in background...${NC}"
 
 # Launch process with nohup natively (direct node call to avoid npm child-process SIGHUP signals)
 NODE_ENV=development LOG_LEVEL=debug nohup node dist/index.js > "$LOG_FILE" 2>&1 &
@@ -423,27 +592,60 @@ SERVICE_PID=$!
 # Save PID to file
 echo "$SERVICE_PID" > "$PID_FILE"
 
-# Give Node.js 1.5 seconds to start and check if it's still alive
+# Give services 1.5 seconds to start and check if they are still alive
 sleep 1.5
-if kill -0 "$SERVICE_PID" 2>/dev/null; then
-  echo -e "\n🎉 ${GREEN}${BOLD}AMZX Data Service is now running in background!${NC}"
-  echo -e "  - Process PID:       ${CYAN}$SERVICE_PID${NC}"
-  echo -e "  - Process PID File:  ${CYAN}data-service.pid${NC}"
-  echo -e "  - Active Log File:   ${CYAN}amzx-data-service/data-service.log${NC}"
+
+SYNC_ALIVE=false
+if [ "$USE_DOCKER_SYNC" = "true" ]; then
+  if docker ps --format '{{.Names}}' | grep -q "^amzx-blockchain-sync$"; then
+    SYNC_ALIVE=true
+  fi
+else
+  if kill -0 "$SYNC_PID" 2>/dev/null; then
+    SYNC_ALIVE=true
+  fi
+fi
+
+if kill -0 "$SERVICE_PID" 2>/dev/null && [ "$SYNC_ALIVE" = "true" ]; then
+  echo -e "\n🎉 ${GREEN}${BOLD}AMZX Data Service & Sync Consumer are now running in background!${NC}"
+  echo -e "  - Data Service PID:  ${CYAN}$SERVICE_PID${NC}"
+  if [ "$USE_DOCKER_SYNC" = "true" ]; then
+    echo -e "  - Sync Consumer:     ${CYAN}Running in Docker [amzx-blockchain-sync]${NC}"
+  else
+    echo -e "  - Sync Consumer PID: ${CYAN}$SYNC_PID${NC}"
+  fi
+  echo -e "  - Active Log Files:  "
+  echo -e "      * Node API:      ${CYAN}amzx-data-service/data-service.log${NC}"
+  if [ "$USE_DOCKER_SYNC" = "true" ]; then
+    echo -e "      * Sync Consumer: ${CYAN}docker logs amzx-blockchain-sync${NC}"
+  else
+    echo -e "      * Sync Consumer: ${CYAN}amzx-blockchain-postgres-sync/blockchain-sync.log${NC}"
+  fi
   echo
   echo -e "🛡️  ${GREEN}${BOLD}Unified Domain Routing active on https://data-service.planetone.io${NC}"
   echo -e "  - Acessar ${CYAN}https://data-service.planetone.io/${NC}      👉 Servirá o Swagger UI interativo gráfico!"
   echo -e "  - Acessar ${CYAN}https://data-service.planetone.io/assets${NC} 👉 Servirá os dados reais da API indexados!"
   echo
   echo -e "📋 Useful Daemon Commands:"
-  echo -e "  - Monitor logs in real-time:  ${CYAN}tail -f amzx-data-service/data-service.log${NC}"
+  if [ "$USE_DOCKER_SYNC" = "true" ]; then
+    echo -e "  - Monitor sync logs:          ${CYAN}docker logs -f amzx-blockchain-sync${NC}"
+  else
+    echo -e "  - Monitor sync logs:          ${CYAN}tail -f amzx-blockchain-postgres-sync/blockchain-sync.log${NC}"
+  fi
+  echo -e "  - Monitor Node API logs:      ${CYAN}tail -f amzx-data-service/data-service.log${NC}"
   echo -e "  - Check service status:       ${CYAN}./start-data-service.sh status${NC}"
-  echo -e "  - Stop background service:    ${CYAN}./start-data-service.sh stop${NC}"
-  echo -e "  - Restart background service: ${CYAN}./start-data-service.sh restart${NC}"
+  echo -e "  - Stop background services:   ${CYAN}./start-data-service.sh stop${NC}"
+  echo -e "  - Restart background services:${CYAN}./start-data-service.sh restart${NC}"
   echo
 else
-  echo -e "\n❌ ${RED}Error: Service started but died immediately.${NC}"
-  echo -e "Please check the log file: ${CYAN}cat amzx-data-service/data-service.log${NC}"
-  rm -f "$PID_FILE"
+  echo -e "\n❌ ${RED}Error: Services started but one of them died immediately.${NC}"
+  echo -e "Please check the log files:"
+  echo -e "  - ${CYAN}cat amzx-data-service/data-service.log${NC}"
+  if [ "$USE_DOCKER_SYNC" = "true" ]; then
+    echo -e "  - ${CYAN}docker logs amzx-blockchain-sync${NC}"
+  else
+    echo -e "  - ${CYAN}cat amzx-blockchain-postgres-sync/blockchain-sync.log${NC}"
+  fi
+  stop_service
   exit 1
 fi
