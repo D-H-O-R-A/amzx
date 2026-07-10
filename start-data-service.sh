@@ -96,42 +96,102 @@ stop_service() {
 }
 
 status_service() {
-  # Indexer Status
+  print_header
+  echo -e "📋 ${BOLD}${UNDERLINE}AMZX UNIFIED SERVICE DIAGNOSTIC SYSTEM${NC}\n"
+
+  # 1. Indexer Status
+  echo -e "🔷 ${CYAN}${BOLD}[1/4] Node.js Data Service (Indexer API)${NC}"
   if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")
     if kill -0 "$PID" 2>/dev/null; then
-      echo -e "🟢 ${GREEN}${BOLD}AMZX Data Service Indexer is RUNNING (PID: $PID).${NC}"
+      echo -e "  - Status:      🟢 ${GREEN}${BOLD}RUNNING${NC}"
+      echo -e "  - PID:         ${CYAN}$PID${NC}"
+      echo -e "  - Listening:   ${CYAN}Port 3000 (Internal NodeJS)${NC}"
     else
-      echo -e "🔴 ${RED}AMZX Data Service Indexer PID exists ($PID) but process is DEAD.${NC}"
+      echo -e "  - Status:      🔴 ${RED}DEAD${NC} (PID file exists but process is not running)"
     fi
   else
-    echo -e "⚪ ${YELLOW}AMZX Data Service Indexer is STOPPED.${NC}"
+    echo -e "  - Status:      ⚪ ${YELLOW}STOPPED${NC}"
   fi
+  echo
 
-  # Sync Consumer Status (Native or Docker)
+  # 2. Sync Consumer Status
+  echo -e "🔷 ${CYAN}${BOLD}[2/4] Rust Blockchain Postgres Sync Consumer${NC}"
   if [ -f "$PID_FILE_SYNC" ]; then
     PID_SYNC=$(cat "$PID_FILE_SYNC")
     if kill -0 "$PID_SYNC" 2>/dev/null; then
-      echo -e "🟢 ${GREEN}${BOLD}AMZX Blockchain Postgres Sync Consumer is RUNNING natively (PID: $PID_SYNC).${NC}"
+      echo -e "  - Status:      🟢 ${GREEN}${BOLD}RUNNING (Native)${NC}"
+      echo -e "  - PID:         ${CYAN}$PID_SYNC${NC}"
     else
-      echo -e "🔴 ${RED}AMZX Blockchain Postgres Sync Consumer PID exists ($PID_SYNC) but process is DEAD.${NC}"
+      echo -e "  - Status:      🔴 ${RED}DEAD${NC} (PID file exists but process is not running)"
     fi
   elif command -v docker &> /dev/null && docker ps --format '{{.Names}}' | grep -q "^amzx-blockchain-sync$"; then
-    echo -e "🟢 ${GREEN}${BOLD}AMZX Blockchain Postgres Sync Consumer is RUNNING inside Docker Container.${NC}"
+    echo -e "  - Status:      🟢 ${GREEN}${BOLD}RUNNING (Docker Container)${NC}"
+    echo -e "  - Network:     ${CYAN}amzx-network (Bridge)${NC}"
+    # Quick log check
+    LOG_PREVIEW=$(docker logs amzx-blockchain-sync 2>&1 | tail -n 1 | tr -d '\n' | cut -c1-120)
+    echo -e "  - Last Log:    ${YELLOW}${LOG_PREVIEW:-No logs yet}...${NC}"
   else
-    echo -e "⚪ ${YELLOW}AMZX Blockchain Postgres Sync Consumer is STOPPED.${NC}"
+    echo -e "  - Status:      ⚪ ${YELLOW}STOPPED / INACTIVE${NC}"
   fi
+  echo
 
-  # Swagger Docker Status
+  # 3. Swagger UI Status
+  echo -e "🔷 ${CYAN}${BOLD}[3/4] Interactive Swagger UI Document Portal${NC}"
   if command -v docker &> /dev/null; then
     if docker ps --format '{{.Names}}' | grep -q "^amzx-swagger$"; then
-      echo -e "🟢 ${GREEN}${BOLD}Swagger UI Docker Container is RUNNING on internal port 8080.${NC}"
+      echo -e "  - Status:      🟢 ${GREEN}${BOLD}RUNNING (Docker Container)${NC}"
+      echo -e "  - Route:       ${CYAN}Port 8080 (Internal -> Nginx Proxied to '/' and '/docs')${NC}"
     else
-      echo -e "⚪ ${YELLOW}Swagger UI Docker Container is STOPPED/NOT INSTALLED.${NC}"
+      echo -e "  - Status:      ⚪ ${YELLOW}STOPPED${NC}"
     fi
   else
-    echo -e "⚠️  ${RED}Docker is not installed on this system.${NC}"
+    echo -e "  - Status:      ⚠️  ${RED}Docker not installed${NC}"
   fi
+  echo
+
+  # 4. PostgreSQL Database Diagnostic Status
+  echo -e "🔷 ${CYAN}${BOLD}[4/4] PostgreSQL Database System${NC}"
+  if command -v docker &> /dev/null; then
+    if docker ps -a --format '{{.Names}}' | grep -q "^amzx-postgres$"; then
+      CONTAINER_STATE=$(docker inspect --format='{{.State.Status}}' amzx-postgres 2>/dev/null)
+      if [ "$CONTAINER_STATE" = "running" ]; then
+        echo -e "  - Container:   🟢 ${GREEN}${BOLD}RUNNING (amzx-postgres)${NC}"
+        # pg_isready verification
+        if docker exec amzx-postgres pg_isready -U "$PGUSER" -d "$PGDATABASE" &>/dev/null; then
+          echo -e "  - Db Readiness:🟢 ${GREEN}Ready to accept connections (Healthy via Unix Socket)${NC}"
+        else
+          echo -e "  - Db Readiness:🔴 ${RED}Initializing or not responding${NC}"
+        fi
+      else
+        echo -e "  - Container:   🔴 ${RED}STOPPED ($CONTAINER_STATE)${NC}"
+      fi
+    else
+      echo -e "  - Container:   ⚪ ${YELLOW}NOT FOUND${NC} (No local amzx-postgres container active)"
+    fi
+  fi
+
+  # Port binding diagnostic
+  if ss -tulpn 2>/dev/null | grep -q ":5432 "; then
+    BINDING_INFO=$(ss -tulpn 2>/dev/null | grep ":5432 " | head -n 1)
+    echo -e "  - Port 5432:   🟢 ${GREEN}Listening natively on host network:${NC}"
+    echo -e "                 ${YELLOW}$BINDING_INFO${NC}"
+  else
+    echo -e "  - Port 5432:   🔴 ${RED}NOT listening on any host interface${NC}"
+  fi
+
+  # Docker Network diagnostic
+  if command -v docker &> /dev/null; then
+    if docker network ls | grep -q "amzx-network"; then
+      echo -e "  - Docker Net:  🟢 ${GREEN}amzx-network is ACTIVE${NC}"
+      # Check containers connected to amzx-network
+      CONNECTED_CONS=$(docker network inspect amzx-network --format '{{range .Containers}}{{.Name}} (IP: {{.IPv4Address}}), {{end}}' 2>/dev/null | sed 's/, $//')
+      echo -e "  - Connections: ${CYAN}${CONNECTED_CONS:-None}${NC}"
+    else
+      echo -e "  - Docker Net:  🔴 ${RED}amzx-network is NOT active (Bridge communication disabled)${NC}"
+    fi
+  fi
+  echo -e "==============================================================================\n"
 }
 
 # Parse command line arguments
@@ -498,6 +558,12 @@ if command -v docker &> /dev/null; then
   if [[ "$PGHOST" == "127.0.0.1" || "$PGHOST" == "localhost" ]]; then
     echo -e "🐳 ${CYAN}Checking PostgreSQL Docker container (Port 5432)...${NC}"
     
+    # Create isolated Docker network if it doesn't exist
+    if ! docker network ls | grep -q "amzx-network"; then
+      echo -e "🌐 ${CYAN}Creating isolated Docker network amzx-network...${NC}"
+      docker network create amzx-network &>/dev/null
+    fi
+
     # Force release of port 5432 (kill any native or zombie process using it)
     if ss -tulpn 2>/dev/null | grep -q ":5432 "; then
       echo -e "⚠️  ${YELLOW}Port 5432 is occupied. Forcing cleanup and killing the occupant process...${NC}"
@@ -519,10 +585,11 @@ if command -v docker &> /dev/null; then
       echo -e "🔄 ${CYAN}Restarting existing amzx-postgres Docker container...${NC}"
       docker start amzx-postgres &>/dev/null
     else
-      echo -e "📦 ${CYAN}Creating and launching new amzx-postgres Docker container on host network...${NC}"
+      echo -e "📦 ${CYAN}Creating and launching new amzx-postgres Docker container on amzx-network...${NC}"
       docker run -d \
         --name amzx-postgres \
-        --net=host \
+        --network amzx-network \
+        -p 5432:5432 \
         -e POSTGRES_DB="$PGDATABASE" \
         -e POSTGRES_USER="$PGUSER" \
         -e POSTGRES_PASSWORD="$PGPASSWORD" \
@@ -535,8 +602,8 @@ if command -v docker &> /dev/null; then
       echo -e "⏳ ${CYAN}Waiting for PostgreSQL to be healthy and accept connections...${NC}"
       PG_HEALTHY=false
       for i in {1..20}; do
-        # Verify internal TCP readiness inside the container pointing to 127.0.0.1
-        if docker exec amzx-postgres pg_isready -h 127.0.0.1 -U "$PGUSER" -d "$PGDATABASE" &>/dev/null; then
+        # Verify internal readiness inside the container via Unix Socket
+        if docker exec amzx-postgres pg_isready -U "$PGUSER" -d "$PGDATABASE" &>/dev/null; then
           PG_HEALTHY=true
           break
         fi
@@ -574,8 +641,8 @@ if command -v docker &> /dev/null; then
     for r in {1..5}; do
       echo -e "🚀 ${CYAN}Running database migrations via Diesel (Attempt $r/5)...${NC}"
       docker run --rm \
-        --net=host \
-        -e POSTGRES__HOST="$POSTGRES__HOST" \
+        --network amzx-network \
+        -e POSTGRES__HOST="amzx-postgres" \
         -e POSTGRES__PORT="$POSTGRES__PORT" \
         -e POSTGRES__DATABASE="$POSTGRES__DATABASE" \
         -e POSTGRES__USER="$POSTGRES__USER" \
@@ -586,7 +653,7 @@ if command -v docker &> /dev/null; then
         break
       fi
       if [ $r -lt 5 ]; then
-        echo -e "⚠️  ${YELLOW}Migration attempt $r failed due to Docker network lag. Retrying in 4 seconds...${NC}"
+        echo -e "⚠️  ${YELLOW}Migration attempt $r failed. Retrying in 4 seconds...${NC}"
         sleep 4
       fi
     done
@@ -619,15 +686,22 @@ if [ "$USE_DOCKER_SYNC" = "true" ]; then
   # Remove existing container if left over
   docker rm -f amzx-blockchain-sync &>/dev/null
   
+  # Adapt local updates URL for Docker Network bridge connectivity
+  CONTAINER_UPDATES_URL="$BLOCKCHAIN_UPDATES_URL"
+  if [[ "$CONTAINER_UPDATES_URL" == *"127.0.0.1"* || "$CONTAINER_UPDATES_URL" == *"localhost"* ]]; then
+    CONTAINER_UPDATES_URL=$(echo "$CONTAINER_UPDATES_URL" | sed -e 's/127.0.0.1/host.docker.internal/g' -e 's/localhost/host.docker.internal/g')
+  fi
+
   docker run -d \
     --name amzx-blockchain-sync \
-    --net=host \
-    -e POSTGRES__HOST="$POSTGRES__HOST" \
+    --network amzx-network \
+    --add-host=host.docker.internal:host-gateway \
+    -e POSTGRES__HOST="amzx-postgres" \
     -e POSTGRES__PORT="$POSTGRES__PORT" \
     -e POSTGRES__DATABASE="$POSTGRES__DATABASE" \
     -e POSTGRES__USER="$POSTGRES__USER" \
     -e POSTGRES__PASSWORD="$POSTGRES__PASSWORD" \
-    -e BLOCKCHAIN_UPDATES_URL="$BLOCKCHAIN_UPDATES_URL" \
+    -e BLOCKCHAIN_UPDATES_URL="$CONTAINER_UPDATES_URL" \
     -e CHAIN_ID=$CHAIN_ID_DEC \
     -e STARTING_HEIGHT=$STARTING_HEIGHT \
     -e RUST_LOG="${RUST_LOG:-info}" \
