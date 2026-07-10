@@ -498,26 +498,38 @@ if command -v docker &> /dev/null; then
   if [[ "$PGHOST" == "127.0.0.1" || "$PGHOST" == "localhost" ]]; then
     echo -e "🐳 ${CYAN}Checking PostgreSQL Docker container (Port 5432)...${NC}"
     
-    # Check if port 5432 is already used by a native service on the host
+    # Force release of port 5432 (kill any native or zombie process using it)
     if ss -tulpn 2>/dev/null | grep -q ":5432 "; then
-      echo -e "⚠️  ${YELLOW}Port 5432 is already occupied by a native database service on host. Skipping container creation.${NC}"
-    else
-      # If the container already exists but is stopped, restart it
-      if docker ps -a --format '{{.Names}}' | grep -q "^amzx-postgres$"; then
-        echo -e "🔄 ${CYAN}Restarting existing amzx-postgres Docker container...${NC}"
-        docker start amzx-postgres &>/dev/null
-      else
-        echo -e "📦 ${CYAN}Creating and launching new amzx-postgres Docker container...${NC}"
-        docker run -d \
-          --name amzx-postgres \
-          -p 5432:5432 \
-          -e POSTGRES_DB="$PGDATABASE" \
-          -e POSTGRES_USER="$PGUSER" \
-          -e POSTGRES_PASSWORD="$PGPASSWORD" \
-          -v amzx-postgres-data:/var/lib/postgresql/data \
-          --restart unless-stopped \
-          postgres:14-alpine &>/dev/null
+      echo -e "⚠️  ${YELLOW}Port 5432 is occupied. Forcing cleanup and killing the occupant process...${NC}"
+      OCCUPANT_PID=$(ss -tulpn 2>/dev/null | grep ":5432 " | head -n 1 | tr -s ' ' | cut -d' ' -f7 | grep -o -E '[0-9]+' | head -n 1)
+      if [ ! -z "$OCCUPANT_PID" ]; then
+        kill -9 "$OCCUPANT_PID" &>/dev/null
       fi
+      if command -v fuser &>/dev/null; then
+        fuser -k -n tcp 5432 &>/dev/null
+      elif command -v lsof &>/dev/null; then
+        lsof -t -i tcp:5432 | xargs kill -9 &>/dev/null
+      fi
+      sleep 2
+      echo -e "✅ ${GREEN}Port 5432 released successfully!${NC}"
+    fi
+
+    # If the container already exists but is stopped, restart it
+    if docker ps -a --format '{{.Names}}' | grep -q "^amzx-postgres$"; then
+      echo -e "🔄 ${CYAN}Restarting existing amzx-postgres Docker container...${NC}"
+      docker start amzx-postgres &>/dev/null
+    else
+      echo -e "📦 ${CYAN}Creating and launching new amzx-postgres Docker container on host network...${NC}"
+      docker run -d \
+        --name amzx-postgres \
+        --net=host \
+        -e POSTGRES_DB="$PGDATABASE" \
+        -e POSTGRES_USER="$PGUSER" \
+        -e POSTGRES_PASSWORD="$PGPASSWORD" \
+        -v amzx-postgres-data:/var/lib/postgresql/data \
+        --restart unless-stopped \
+        postgres:14-alpine &>/dev/null
+    fi
 
       # Wait for postgres to accept connections before booting NodeJS
       echo -e "⏳ ${CYAN}Waiting for PostgreSQL to be healthy and accept connections...${NC}"
