@@ -25,6 +25,24 @@ NC='\033[0m' # No Color
 WIZARD_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$WIZARD_DIR/.." && pwd )"
 
+# Locate a directory by climbing up parent directories
+find_relative_dir() {
+  local target_name="$1"
+  local current_dir="$WIZARD_DIR"
+  for i in {1..5}; do
+    if [ -d "$current_dir/$target_name" ]; then
+      echo "$(realpath "$current_dir/$target_name")"
+      return 0
+    fi
+    current_dir="$(dirname "$current_dir")"
+    if [ "$current_dir" = "/" ]; then
+      break
+    fi
+  done
+  return 1
+}
+
+
 # Dynamic JAVA_HOME finder for Java 17 (AMD64 & ARM64 compatible)
 find_java_home() {
   if [ -z "$JAVA_HOME" ] || [ ! -d "$JAVA_HOME" ]; then
@@ -220,30 +238,66 @@ echo
 echo -e "${YELLOW}${BOLD}--- 🛸 STEP 2: SOURCE CODE ORIGINS ---${NC}"
 echo -e "You can clone and build Diego's clean, rebranded repositories:"
 echo -e "🔗 Blockchain Core: ${BLUE}https://github.com/D-H-O-R-A/amzx.git${NC}"
-echo -e "🔗 Matcher DEX:     ${BLUE}https://github.com/D-H-O-R-A/matcher_amzx.git${NC}"
+echo -e "🔗 Matcher DEX:     ${BLUE}https://github.com/D-H-O-R-A/matcher.git${NC}"
 echo
 
 read -p "Do you want to clone clean repositories from Diego's GitHub to a fresh folder? [s/N]: " CLONE_REPOS
 COMPILE_PRE=${COMPILE_PRE:-N}
 CLONE_REPOS=${CLONE_REPOS:-N}
 
-WAVES_SRC_DIR="$PROJECT_ROOT/amzx-node"
-MATCHER_SRC_DIR="$PROJECT_ROOT/amzx-matcher"
+WAVES_SRC_DIR="$PROJECT_ROOT"
+MATCHER_SRC_DIR=""
+
+# Try to find matcher source folder in sibling directories
+for sibling in "$PROJECT_ROOT/../matcher" \
+               "$PROJECT_ROOT/../amzx-matcher" \
+               "$PROJECT_ROOT/../matcher_amzx"; do
+  if [ -d "$sibling" ]; then
+    MATCHER_SRC_DIR=$(realpath "$sibling")
+    break
+  fi
+done
 
 # Auto-detect workspace folders if they are in the custom amzx-workspace directory (typically on VPS)
 if [ ! -d "$WAVES_SRC_DIR" ] && [ -d "$WIZARD_DIR/amzx-workspace/amzx" ]; then
   WAVES_SRC_DIR="$WIZARD_DIR/amzx-workspace/amzx"
 fi
-if [ ! -d "$MATCHER_SRC_DIR" ] && [ -d "$WIZARD_DIR/amzx-workspace/matcher_amzx" ]; then
-  MATCHER_SRC_DIR="$WIZARD_DIR/amzx-workspace/matcher_amzx"
+if [ -z "$MATCHER_SRC_DIR" ] || [ ! -d "$MATCHER_SRC_DIR" ]; then
+  for candidate in "$WIZARD_DIR/amzx-workspace/matcher" \
+                   "$WIZARD_DIR/amzx-workspace/matcher_amzx"; do
+    if [ -d "$candidate" ]; then
+      MATCHER_SRC_DIR="$candidate"
+      break
+    fi
+  done
 fi
 
-# Se o usuário não estiver rodando no root e estiver na pasta padrão de documentos, ajustamos automaticamente os caminhos se existirem
-if [ ! -d "$WAVES_SRC_DIR" ] && [ -d "/home/diegooris/Documentos/amzblockchain/amzx-node" ]; then
-  WAVES_SRC_DIR="/home/diegooris/Documentos/amzblockchain/amzx-node"
-fi
-if [ ! -d "$MATCHER_SRC_DIR" ] && [ -d "/home/diegooris/Documentos/amzblockchain/amzx-matcher" ]; then
-  MATCHER_SRC_DIR="/home/diegooris/Documentos/amzblockchain/amzx-matcher"
+# Dynamically locate relative directories if not already found
+if [ ! -d "$WAVES_SRC_DIR" ] || [ -z "$MATCHER_SRC_DIR" ] || [ ! -d "$MATCHER_SRC_DIR" ]; then
+  DETECTED_NODE=""
+  for name in "amzx" "amzx-node"; do
+    res=$(find_relative_dir "$name")
+    if [ -n "$res" ] && [ -d "$res" ]; then
+      DETECTED_NODE="$res"
+      break
+    fi
+  done
+  
+  DETECTED_MATCHER=""
+  for name in "matcher" "amzx-matcher" "matcher_amzx"; do
+    res=$(find_relative_dir "$name")
+    if [ -n "$res" ] && [ -d "$res" ]; then
+      DETECTED_MATCHER="$res"
+      break
+    fi
+  done
+
+  if [ -n "$DETECTED_NODE" ] && [ -d "$DETECTED_NODE" ]; then
+    WAVES_SRC_DIR="$DETECTED_NODE"
+  fi
+  if [ -n "$DETECTED_MATCHER" ] && [ -d "$DETECTED_MATCHER" ]; then
+    MATCHER_SRC_DIR="$DETECTED_MATCHER"
+  fi
 fi
 
 if [[ "$CLONE_REPOS" =~ ^[Ss]$ ]]; then
@@ -263,14 +317,14 @@ if [[ "$CLONE_REPOS" =~ ^[Ss]$ ]]; then
     echo -e "Directory ${GREEN}amzx${NC} already exists, skipping clone."
   fi
   
-  if [ ! -d "matcher_amzx" ]; then
-    git clone https://github.com/D-H-O-R-A/matcher_amzx.git
+  if [ ! -d "matcher" ]; then
+    git clone https://github.com/D-H-O-R-A/matcher.git
   else
-    echo -e "Directory ${GREEN}matcher_amzx${NC} already exists, skipping clone."
+    echo -e "Directory ${GREEN}matcher${NC} already exists, skipping clone."
   fi
   
   WAVES_SRC_DIR="$ABS_WORKSPACE/amzx"
-  MATCHER_SRC_DIR="$ABS_WORKSPACE/matcher_amzx"
+  MATCHER_SRC_DIR="$ABS_WORKSPACE/matcher"
   
   # ------------------------------------------------------------------------------
   # STEP 3: Complete Compilation from Cloned Repositories
@@ -622,6 +676,78 @@ if [[ "$CONFIGURE_NGINX" =~ ^[Yy]$ ]]; then
   while [ -z "$CERTBOT_EMAIL" ]; do
     read -p "Email cannot be empty. Enter contact email for Certbot: " CERTBOT_EMAIL
   done
+fi
+
+echo
+echo -e "${YELLOW}${BOLD}--- 🧹 DATA DIRECTORY PURGE & FRESH GENESIS OVERRIDE ---${NC}"
+read -p "Do you want to clear pre-existing blockchain databases, PostgreSQL sync volumes, and FullExplorer SQLite caches for a clean genesis restart? [y/N]: " WIPE_DATA
+WIPE_DATA=${WIPE_DATA:-N}
+
+if [[ "$WIPE_DATA" =~ ^[Yy]$ ]]; then
+  echo -e "${CYAN}Stopping any running services to release file locks...${NC}"
+  # Stop local updaters and PHP servers
+  pkill -f "updater.sh" &>/dev/null || true
+  pkill -f "updater_headers.sh" &>/dev/null || true
+  pkill -f "php -S" &>/dev/null || true
+  pkill -f "config.php" &>/dev/null || true
+  
+  # Stop systemd production services if any
+  if systemctl list-units --all --type=service | grep -q "fullexplorer-"; then
+    echo -e "${CYAN}Stopping production FullExplorer systemd services...${NC}"
+    for srv in $(systemctl list-units --all --type=service --no-legend | awk '{print $1}' | grep "fullexplorer-"); do
+      echo -e "🛑 Stopping service: ${YELLOW}$srv${NC}"
+      sudo systemctl stop "$srv" 2>/dev/null || true
+    done
+  fi
+  sleep 1
+
+  echo -e "${CYAN}Purging data in ${BOLD}$RUN_DIR/node-data${NC} and ${BOLD}$RUN_DIR/matcher-data${NC}...${NC}"
+  rm -rf "$RUN_DIR/node-data"
+  rm -rf "$RUN_DIR/matcher-data"
+
+  # Drop and recreate Docker PostgreSQL volume amzx-postgres-data if Docker is available
+  if command -v docker &>/dev/null; then
+    echo -e "${CYAN}Stopping PostgreSQL containers and removing persistent volume 'amzx-postgres-data'...${NC}"
+    docker stop amzx-postgres &>/dev/null || true
+    docker rm amzx-postgres &>/dev/null || true
+    docker stop amzx-blockchain-sync &>/dev/null || true
+    docker rm amzx-blockchain-sync &>/dev/null || true
+    docker volume rm amzx-postgres-data &>/dev/null || true
+    echo -e "✅ ${GREEN}PostgreSQL database and volume cleared.${NC}"
+  fi
+
+  # SQLite databases of development and production FullExplorer instances (var/db/*)
+  echo -e "${CYAN}Searching and purging FullExplorer var/db caches and database files...${NC}"
+  DB_CANDIDATES=()
+  
+  # 1. Use parent-climbing locator to find planetone/explorer
+  REL_EXPLORER=$(find_relative_dir "planetone/explorer")
+  if [ -n "$REL_EXPLORER" ] && [ -d "$REL_EXPLORER" ]; then
+    DB_CANDIDATES+=("$REL_EXPLORER/fullexplorer/var/db" "$REL_EXPLORER/var/db")
+  fi
+
+  # 2. Add global/VPS candidates
+  for cand in "/var/www/fullexplorer" "/var/www/testnet-fullexplorer"; do
+    if [ -d "$cand" ]; then
+      abs_cand=$(realpath "$cand")
+      DB_CANDIDATES+=("$abs_cand/fullexplorer/var/db" "$abs_cand/var/db")
+    fi
+  done
+  for path in /var/www/fullexplorer*/fullexplorer/var/db \
+              /var/www/fullexplorer*/var/db \
+              /var/www/testnet-fullexplorer*/fullexplorer/var/db \
+              /var/www/testnet-fullexplorer*/var/db; do
+    if [ -d "$path" ]; then
+      DB_CANDIDATES+=("$path")
+    fi
+  done
+  for db_dir in $(echo "${DB_CANDIDATES[@]}" | tr ' ' '\n' | sort -u); do
+    if [ -d "$db_dir" ]; then
+      echo -e "🧹 Clearing FullExplorer database directory: ${YELLOW}$db_dir${NC}"
+      rm -rf "$db_dir"/*
+    fi
+  done
+  echo -e "✅ ${GREEN}FullExplorer var/db databases, headers, and locks completely purged.${NC}"
 fi
 
 echo
@@ -1305,6 +1431,32 @@ check_port() {
   fi
 }
 
+# Clean stop existing processes on our target ports to avoid conflicts and allow fresh restart
+echo -e "${CYAN}Stopping pre-existing processes on ports $REST_API_PORT, $MATCHER_PORT, 3000...${NC}"
+kill_port() {
+  local port=$1
+  if command -v fuser &>/dev/null; then
+    fuser -k -n tcp "$port" &>/dev/null || true
+  elif command -v lsof &>/dev/null; then
+    lsof -t -i tcp:"$port" | xargs kill -9 &>/dev/null || true
+  fi
+}
+kill_port "$REST_API_PORT"
+kill_port "$MATCHER_PORT"
+kill_port "3000"
+
+# Also stop data service via project script to clean up Docker containers completely
+if [ -f "$PROJECT_ROOT/start-data-service.sh" ]; then
+  echo -e "🛑 ${CYAN}Stopping active AMZX background Data Service indexer & Docker services...${NC}"
+  "$PROJECT_ROOT/start-data-service.sh" stop &>/dev/null || true
+fi
+
+# Stop any lingering Java node or SBT matcher loops explicitly
+pkill -f "com.wavesplatform.Application" &>/dev/null || true
+pkill -f "dex/run" &>/dev/null || true
+pkill -f "sbtLauncher" &>/dev/null || true
+sleep 2
+
 NODE_ALREADY_RUNNING=false
 MATCHER_ALREADY_RUNNING=false
 
@@ -1468,6 +1620,114 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
   
   if [ "$NODE_ONLINE" = true ] && [ "$MATCHER_ONLINE" = true ] && [ "$DATA_SERVICE_ONLINE" = true ]; then
     echo -e "\n\n🎉 ${GREEN}${BOLD}SUCCESS! All AMZX blockchain services are now successfully ONLINE and verified!${NC}"
+    
+    # --- AUTOMATIC FULLEXPLORER INTEGRATION ---
+    EXPLORER_DIR=$(find_relative_dir "planetone/explorer")
+    if [ -z "$EXPLORER_DIR" ] || [ ! -d "$EXPLORER_DIR" ]; then
+      for cand in "/var/www/fullexplorer" "/var/www/testnet-fullexplorer"; do
+        if [ -d "$cand" ]; then
+          EXPLORER_DIR=$(realpath "$cand")
+          break
+        fi
+      done
+    fi
+
+    if [ -n "$EXPLORER_DIR" ] && [ -d "$EXPLORER_DIR" ]; then
+      echo
+      echo -e "⚙️  ${YELLOW}${BOLD}--- 📡 AUTOMATING PLANET ONE FULLEXPLORER CONFIGURATION & LAUNCH ---${NC}"
+      
+      # Determine URLs
+      if [ -n "$BASE_DOMAIN" ]; then
+        NODES_URL="https://nodes.$BASE_DOMAIN"
+        MATCHER_URL="https://matcher.$BASE_DOMAIN"
+      else
+        NODES_URL="http://127.0.0.1:$REST_API_PORT"
+        MATCHER_URL="http://127.0.0.1:$MATCHER_PORT"
+      fi
+
+      # Find all config.php files to update
+      CONFIG_FILES=("$EXPLORER_DIR/fullexplorer/config.php" "$EXPLORER_DIR/config.php")
+      if [ -d "/var/www" ]; then
+        for cfg in $(find /var/www -name "config.php" 2>/dev/null); do
+          CONFIG_FILES+=("$cfg")
+        done
+      fi
+
+      for cfg_file in "${CONFIG_FILES[@]}"; do
+        if [ -f "$cfg_file" ]; then
+          echo -e "🔧 Updating FullExplorer config: ${YELLOW}$cfg_file${NC}"
+          python3 -c "
+import re
+config_path = '$cfg_file'
+nodes_url = '$NODES_URL'
+matcher_url = '$MATCHER_URL'
+chain_id = '$CHAIN_ID'
+
+try:
+    with open(config_path, 'r') as f:
+        content = f.read()
+
+    content = re.sub(r\"define\(\s*'W8IO_NODES'\s*,\s*\[[^\]]+\]\s*\);\", f\"define( 'W8IO_NODES', [ '{nodes_url}' ] );\", content)
+    content = re.sub(r\"define\(\s*'W8IO_MULTI_NODES'\s*,\s*\[[^\]]+\]\s*\);\", f\"define( 'W8IO_MULTI_NODES', [ '{nodes_url}' ] );\", content)
+    content = re.sub(r\"define\(\s*'W8IO_MATCHER'\s*,\s*'[^']+'\s*\);\", f\"define( 'W8IO_MATCHER', '{matcher_url}' );\", content)
+    content = re.sub(r\"define\(\s*'W8IO_NETWORK'\s*,\s*'[^']+'\s*\);\", f\"define( 'W8IO_NETWORK', '{chain_id}' );\", content)
+
+    with open(config_path, 'w') as f:
+        f.write(content)
+    print('✅ Config.php successfully updated!')
+except Exception as e:
+    print(f'❌ Failed to update config.php: {e}')
+"
+        fi
+      done
+
+      # Stop any running local or production FullExplorer instances before clean launch
+      pkill -f "updater.sh" &>/dev/null || true
+      pkill -f "updater_headers.sh" &>/dev/null || true
+      pkill -f "php -S" &>/dev/null || true
+      pkill -f "config.php" &>/dev/null || true
+
+      if systemctl list-units --all --type=service | grep -q "fullexplorer-"; then
+        echo -e "🔄 ${CYAN}Restarting production FullExplorer systemd services...${NC}"
+        sudo systemctl daemon-reload
+        for srv in $(systemctl list-units --all --type=service --no-legend | awk '{print $1}' | grep "fullexplorer-"); do
+          echo -e "👉 Restarting: ${GREEN}$srv${NC}"
+          sudo systemctl restart "$srv" 2>/dev/null || true
+        done
+      else
+        # Local localhost developer run
+        echo -e "🚀 Launching local FullExplorer background servers (Port 8080)...${NC}"
+        cd "$EXPLORER_DIR"
+        if [ -d "fullexplorer" ]; then
+          cd fullexplorer
+          # Auto install composer modules if absent
+          if [ ! -f "vendor/autoload.php" ]; then
+            echo -e "📦 Installing required composer packages..."
+            if [ -f "composer.phar" ]; then
+              php composer.phar install --ignore-platform-reqs --no-audit &>/dev/null || true
+            elif command -v composer &>/dev/null; then
+              composer install --ignore-platform-reqs --no-audit &>/dev/null || true
+            else
+              curl -sS https://getcomposer.org/installer | php &>/dev/null || true
+              php composer.phar install --ignore-platform-reqs --no-audit &>/dev/null || true
+            fi
+          fi
+          
+          # Clean local db if requested
+          if [ "${WIPE_DATA:-N}" = "Y" ] || [ "${WIPE_DATA:-N}" = "y" ]; then
+            rm -rf "var/db"/* 2>/dev/null || true
+          fi
+
+          chmod +x updater.sh updater_headers.sh 2>/dev/null || true
+          nohup bash updater.sh > "$EXPLORER_DIR/fullexplorer_boot.log" 2>&1 &
+          nohup bash updater_headers.sh >> "$EXPLORER_DIR/fullexplorer_boot.log" 2>&1 &
+          nohup php -S 127.0.0.1:8080 >> "$EXPLORER_DIR/fullexplorer_boot.log" 2>&1 &
+          echo -e "🎉 ${GREEN}Local FullExplorer is now running in background at http://127.0.0.1:8080/${NC}"
+        fi
+        cd "$WIZARD_DIR"
+      fi
+    fi
+    
     break
   fi
   
