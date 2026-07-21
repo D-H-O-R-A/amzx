@@ -25,6 +25,10 @@ NC='\033[0m' # No Color
 WIZARD_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$WIZARD_DIR/.." && pwd )"
 
+# Ensure essential helper scripts have executable permission
+chmod +x "$PROJECT_ROOT/start-data-service.sh" 2>/dev/null || true
+
+
 # Locate a directory by climbing up parent directories
 find_relative_dir() {
   local target_name="$1"
@@ -1108,6 +1112,9 @@ cd "$MATCHER_SRC_DIR"
 sbt "dex/run $MATCHER_CONF_PATH"
 EOF
 chmod 700 "$START_MATCHER_SCRIPT"
+
+# Ensure the base script is executable before we wrap it
+chmod +x "$PROJECT_ROOT/start-data-service.sh" 2>/dev/null || true
 
 # Start Data Service script
 START_DATA_SERVICE_SCRIPT="$RUN_DIR/start-data-service.sh"
