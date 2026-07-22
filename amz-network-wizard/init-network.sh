@@ -1053,6 +1053,31 @@ with open(blockchain_conf, "w", encoding="utf-8") as f:
     f.write(f"# Native Coin: {coin_name}\n" + content)
 '
 
+  # Convert Base58 Genesis Seed to Base64 for the Matcher DEX
+  MATCHER_SEED_BASE64=$(python3 -c "
+import base64
+
+def b58decode(v):
+    alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+    leading_ones = 0
+    for c in v:
+        if c == '1':
+            leading_ones += 1
+        else:
+            break
+    n = 0
+    for c in v:
+        n = n * 58 + alphabet.index(c)
+    res = bytearray()
+    while n > 0:
+        res.append(n % 256)
+        n //= 256
+    res.extend([0] * leading_ones)
+    return bytes(res[::-1])
+
+print(base64.b64encode(b58decode('$SEED_BASE58')).decode('utf-8'))
+")
+
   # Replace variables in Matcher Config
   sed \
     -e "s|__MATCHER_DATA_DIR__|$RUN_DIR/matcher-data|g" \
@@ -1061,6 +1086,7 @@ with open(blockchain_conf, "w", encoding="utf-8") as f:
     -e "s|__BLOCKCHAIN_UPDATES_PORT__|$BLOCKCHAIN_UPDATES_PORT|g" \
     -e "s|__MATCHER_PORT__|$MATCHER_PORT|g" \
     -e "s|__API_KEY_HASH__|$API_KEY_HASH|g" \
+    -e "s|__MATCHER_SEED_BASE64__|$MATCHER_SEED_BASE64|g" \
     "$WIZARD_DIR/templates/custom-matcher.conf.template" > "$MATCHER_CONF_PATH"
 
   # Secure the generated configuration files so that ONLY the current user can read/write them (chmod 600)
