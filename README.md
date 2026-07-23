@@ -77,6 +77,17 @@ cd amz-network-wizard
 ./init-network.sh
 ```
 
+### Resetting Matcher DEX & FullExplorer (Without Wiping Blockchain)
+If your blockchain is already running and you need to redefine the Matcher seed, reset the Matcher DEX orderbook state, and force FullExplorer to re-index from Block 1 **without touching or wiping the running blockchain node**, run:
+
+```bash
+cd amz-network-wizard
+./reset-matcher-explorer.sh
+```
+
+*(You can optionally pass a custom seed phrase as an argument: `./reset-matcher-explorer.sh "your custom seed phrase"`. If no argument is provided, it automatically reuses and converts the Genesis Seed from your active `blockchain.conf`).*
+
+
 ---
 
 ## 👨‍💻 Developer & Support Contacts
