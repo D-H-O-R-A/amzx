@@ -124,8 +124,9 @@ fi
 
 # Convert Seed to Base64 (Matcher Format) using Python 3
 echo -e "🔒 Encoding Matcher Seed securely to Base64..."
-MATCHER_SEED_BASE64=$(python3 -c "
+MATCHER_SEED_BASE64=$(RAW_INPUT_SEED="$RAW_INPUT_SEED" python3 -c "
 import base64
+import os
 import sys
 
 def b58decode(v):
@@ -149,7 +150,7 @@ def b58decode(v):
     res.extend([0] * leading_ones)
     return bytes(res[::-1])
 
-inp = '''$RAW_INPUT_SEED'''.strip()
+inp = os.environ.get('RAW_INPUT_SEED', '').strip()
 if ' ' not in inp and len(inp) >= 30:
     try:
         decoded = b58decode(inp)
@@ -210,15 +211,21 @@ echo -e "👉 Created backup of matcher.conf at: ${CYAN}$MATCHER_CONF.bak${NC}"
 
 # Replace the seed securely
 python3 -c "
+import re
+
 with open('$MATCHER_CONF', 'r') as f:
     content = f.read()
 
-import re
-if 'seed-in-base-64' in content:
-    content = re.sub(r'seed-in-base-64\s*=\s*\"[^\"]*\"', 'in-mem.seed-in-base-64 = \"$MATCHER_SEED_BASE64\"', content)
-elif 'account-storage' in content:
-    pattern = re.compile(r'(account-storage\s*\{[^}]*)')
-    content = pattern.sub(r'\1\n    in-mem.seed-in-base-64 = \"$MATCHER_SEED_BASE64\"', content)
+new_account_storage = '''account-storage {
+    type = \"in-mem\"
+    in-mem.seed-in-base-64 = \"$MATCHER_SEED_BASE64\"
+  }'''
+
+if 'account-storage' in content:
+    content = re.sub(r'account-storage\s*\{[^}]*\}', new_account_storage, content, flags=re.DOTALL)
+else:
+    # Append to waves.dex block if missing
+    content = content.replace('waves.dex {', 'waves.dex {\n  ' + new_account_storage)
 
 with open('$MATCHER_CONF', 'w') as f:
     f.write(content)
