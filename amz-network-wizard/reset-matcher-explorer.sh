@@ -240,6 +240,7 @@ if [ -d "$MATCHER_DATA_DIR" ]; then
   rm -rf "$MATCHER_DATA_DIR"/data 2>/dev/null || true
   rm -f "$MATCHER_DATA_DIR"/lp-accounts.txt "$MATCHER_DATA_DIR"/*.txt 2>/dev/null || true
   mkdir -p "$MATCHER_DATA_DIR"/data
+  touch "$MATCHER_DATA_DIR"/lp-accounts.txt
 fi
 
 # Reset FullExplorer SQLite Database (forces complete reindex from Block 1)
