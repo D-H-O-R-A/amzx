@@ -173,16 +173,20 @@ echo -e "✅ Seed format conversion completed successfully!"
 # ------------------------------------------------------------------------------
 echo -e "\n${YELLOW}${BOLD}--- 🛑 STEP 3: STOPPING MATCHER & EXPLORER SERVICES ---${NC}"
 
-# Kill Matcher processes
-echo -e "👉 Terminating Matcher processes..."
-pkill -f "dex/run" &>/dev/null || true
-pkill -f "sbtLauncher" &>/dev/null || true
-pkill -f "com.wavesplatform.dex.Application" &>/dev/null || true
+# Kill Matcher processes forcefully and release ports
+echo -e "👉 Terminating Matcher processes and freeing ports..."
+pkill -9 -f "dex/run" &>/dev/null || true
+pkill -9 -f "sbtLauncher" &>/dev/null || true
+pkill -9 -f "com.wavesplatform.dex.Application" &>/dev/null || true
+pkill -9 -f "com.wavesplatform.dex" &>/dev/null || true
+fuser -k -9 6886/tcp &>/dev/null || true
+fuser -k -9 10251/tcp &>/dev/null || true
+sleep 2
 
 # Kill FullExplorer Indexers
 echo -e "👉 Terminating FullExplorer indexers..."
-pkill -f "updater.sh" &>/dev/null || true
-pkill -f "updater_headers.sh" &>/dev/null || true
+pkill -9 -f "updater.sh" &>/dev/null || true
+pkill -9 -f "updater_headers.sh" &>/dev/null || true
 
 # Stop FullExplorer systemd services if they exist
 if systemctl list-units --all --type=service | grep -q "fullexplorer-"; then
@@ -210,11 +214,9 @@ with open('$MATCHER_CONF', 'r') as f:
     content = f.read()
 
 import re
-# Look for in-mem.seed-in-base-64 = \"...\" or seed-in-base-64 = \"...\"
-if 'in-mem.seed-in-base-64' in content:
-    content = re.sub(r'in-mem\.seed-in-base-64\s*=\s*\"[^\"]*\"', 'in-mem.seed-in-base-64 = \"$MATCHER_SEED_BASE64\"', content)
-else:
-    # If key is missing, inject it inside account-storage block
+if 'seed-in-base-64' in content:
+    content = re.sub(r'seed-in-base-64\s*=\s*\"[^\"]*\"', 'in-mem.seed-in-base-64 = \"$MATCHER_SEED_BASE64\"', content)
+elif 'account-storage' in content:
     pattern = re.compile(r'(account-storage\s*\{[^}]*)')
     content = pattern.sub(r'\1\n    in-mem.seed-in-base-64 = \"$MATCHER_SEED_BASE64\"', content)
 
