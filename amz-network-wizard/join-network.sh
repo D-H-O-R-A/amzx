@@ -324,7 +324,7 @@ public class Deriver {
 
             // Gerar endereço para o Chain ID específico
             com.wavesplatform.account.Address addr = com.wavesplatform.account.Address$.MODULE$.fromPublicKey(kp.publicKey(), (byte) chainId);
-            String addressStr = addr.stringRepr();
+            String addressStr = addr.toString();
 
             System.out.println("DERIVED_ADDRESS:" + addressStr);
             System.out.println("DERIVED_PUBKEY:" + pubKeyB58);
@@ -338,8 +338,17 @@ public class Deriver {
 }
 EOF
 
-javac -cp "$FAT_JAR" -d "$TEMP_KEY_DIR" "$TEMP_KEY_DIR/Deriver.java"
-KEY_OUT=$(java -cp "$FAT_JAR:$TEMP_KEY_DIR" Deriver "$SEED_PHRASE" "$CHAIN_ID" "$REST_API_KEY")
+KEY_OUT=""
+if command -v javac &>/dev/null; then
+    javac -cp "$FAT_JAR" -d "$TEMP_KEY_DIR" "$TEMP_KEY_DIR/Deriver.java" 2>/dev/null || true
+    if [ -f "$TEMP_KEY_DIR/Deriver.class" ]; then
+        KEY_OUT=$(java -cp "$FAT_JAR:$TEMP_KEY_DIR" Deriver "$SEED_PHRASE" "$CHAIN_ID" "$REST_API_KEY" 2>/dev/null)
+    fi
+fi
+
+if [ -z "$KEY_OUT" ]; then
+    KEY_OUT=$(java -cp "$FAT_JAR" "$TEMP_KEY_DIR/Deriver.java" "$SEED_PHRASE" "$CHAIN_ID" "$REST_API_KEY" 2>/dev/null)
+fi
 rm -rf "$TEMP_KEY_DIR"
 
 ACCOUNT_ADDRESS=$(echo "$KEY_OUT" | grep "DERIVED_ADDRESS:" | cut -d':' -f2 | tr -d '[:space:]')
@@ -350,6 +359,9 @@ API_KEY_HASH=$(echo "$KEY_OUT" | grep "API_KEY_HASH:" | cut -d':' -f2 | tr -d '[
 echo -e "  - Seu Endereço:      🛡️  ${GREEN}${BOLD}$ACCOUNT_ADDRESS${NC}"
 echo -e "  - Chave Pública:     🔑 ${CYAN}$PUBLIC_KEY${NC}"
 echo
+
+# Remover barra no final da URL se houver
+PEER_API_URL="${PEER_API_URL%/}"
 
 # Consultar saldo do endereço no nó remoto
 echo -e "🔍 Consultando saldo de mineração na rede ($PEER_API_URL)..."
