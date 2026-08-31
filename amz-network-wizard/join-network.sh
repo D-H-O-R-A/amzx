@@ -302,6 +302,8 @@ PEER_API_URL=${PEER_API_URL:-https://${PEER_HOST}}
 # Derivar chaves e endereço usando Java / Fat JAR
 TEMP_KEY_DIR=$(mktemp -d)
 cat << 'EOF' > "$TEMP_KEY_DIR/Deriver.java"
+import java.nio.charset.StandardCharsets;
+
 public class Deriver {
     public static void main(String[] args) {
         try {
@@ -309,20 +311,33 @@ public class Deriver {
             char chainId = args[1].charAt(0);
             String apiKey = args[2];
 
-            // Chave Blake2b API Key Hash
-            byte[] apiKeyHashBytes = com.wavesplatform.crypto.package$.MODULE$.secureHash(apiKey.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            // 1. Chave Blake2b API Key Hash
+            byte[] apiKeyBytes = apiKey.getBytes(StandardCharsets.UTF_8);
+            byte[] apiKeyHashBytes = com.wavesplatform.crypto.package$.MODULE$.secureHash(apiKeyBytes);
             String apiKeyHash = com.wavesplatform.common.utils.Base58$.MODULE$.encode(apiKeyHashBytes);
 
-            // Derivar par de chaves da seed
-            scala.util.Either either = com.wavesplatform.account.KeyPair$.MODULE$.fromSeed(seedStr);
-            com.wavesplatform.account.SeedKeyPair kp = (com.wavesplatform.account.SeedKeyPair) either.right().get();
+            // 2. Tratar Seed Phrase (texto com espacos) ou Base58
+            byte[] seedBytes;
+            if (!seedStr.contains(" ")) {
+                scala.util.Try<byte[]> tryB58 = com.wavesplatform.common.utils.Base58$.MODULE$.tryDecodeWithLimit(seedStr);
+                if (tryB58.isSuccess()) {
+                    seedBytes = tryB58.get();
+                } else {
+                    seedBytes = seedStr.getBytes(StandardCharsets.UTF_8);
+                }
+            } else {
+                seedBytes = seedStr.getBytes(StandardCharsets.UTF_8);
+            }
+
+            // 3. Derivar SeedKeyPair nativo da blockchain via Wallet
+            com.wavesplatform.account.SeedKeyPair kp = com.wavesplatform.wallet.Wallet$.MODULE$.generateNewAccount(seedBytes, 0);
 
             byte[] privKey = kp.privateKey().arr();
             byte[] pubKey = kp.publicKey().arr();
             String privKeyB58 = com.wavesplatform.common.utils.Base58$.MODULE$.encode(privKey);
             String pubKeyB58 = com.wavesplatform.common.utils.Base58$.MODULE$.encode(pubKey);
 
-            // Gerar endereço para o Chain ID específico
+            // 4. Gerar endereço para o Chain ID específico
             com.wavesplatform.account.Address addr = com.wavesplatform.account.Address$.MODULE$.fromPublicKey(kp.publicKey(), (byte) chainId);
             String addressStr = addr.toString();
 
@@ -331,7 +346,7 @@ public class Deriver {
             System.out.println("DERIVED_PRIVKEY:" + privKeyB58);
             System.out.println("API_KEY_HASH:" + apiKeyHash);
         } catch (Exception e) {
-            e.printStackTrace();
+            e.printStackTrace(System.err);
             System.exit(1);
         }
     }
@@ -342,12 +357,12 @@ KEY_OUT=""
 if command -v javac &>/dev/null; then
     javac -cp "$FAT_JAR" -d "$TEMP_KEY_DIR" "$TEMP_KEY_DIR/Deriver.java" 2>/dev/null || true
     if [ -f "$TEMP_KEY_DIR/Deriver.class" ]; then
-        KEY_OUT=$(java -cp "$FAT_JAR:$TEMP_KEY_DIR" Deriver "$SEED_PHRASE" "$CHAIN_ID" "$REST_API_KEY" 2>/dev/null)
+        KEY_OUT=$(java -cp "$FAT_JAR:$TEMP_KEY_DIR" Deriver "$SEED_PHRASE" "$CHAIN_ID" "$REST_API_KEY" 2>&1)
     fi
 fi
 
-if [ -z "$KEY_OUT" ]; then
-    KEY_OUT=$(java -cp "$FAT_JAR" "$TEMP_KEY_DIR/Deriver.java" "$SEED_PHRASE" "$CHAIN_ID" "$REST_API_KEY" 2>/dev/null)
+if [ -z "$KEY_OUT" ] || [[ "$KEY_OUT" =~ "Exception" ]]; then
+    KEY_OUT=$(java -cp "$FAT_JAR" "$TEMP_KEY_DIR/Deriver.java" "$SEED_PHRASE" "$CHAIN_ID" "$REST_API_KEY" 2>&1)
 fi
 rm -rf "$TEMP_KEY_DIR"
 
