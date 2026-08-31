@@ -523,6 +523,12 @@ if [ -d "\$SCRIPT_DIR/lib" ]; then
 fi
 
 java \\
+  -Xmx4g \\
+  --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \\
+  --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED \\
+  --add-opens=java.base/java.lang=ALL-UNNAMED \\
+  --add-opens=java.base/java.math=ALL-UNNAMED \\
+  --add-opens=java.base/java.util=ALL-UNNAMED \\
   -cp "\${FAT_JAR}\${EXTRA_CP}" \\
   -Dlogback.configurationFile="\$SCRIPT_DIR/logback.xml" \\
   com.wavesplatform.Application \\
