@@ -426,6 +426,10 @@ if [ "$IS_VALIDATOR" = true ]; then
     MINER_ENABLED="yes"
 fi
 
+# Detectar IP público para declared-address P2P
+MY_PUBLIC_IP=$(curl -s -4 -m 3 https://ifconfig.me 2>/dev/null || curl -s -4 -m 3 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+MY_PUBLIC_IP=${MY_PUBLIC_IP:-127.0.0.1}
+
 # Gerar blockchain.conf com wallet.dat e seed em formato Base58
 CONF_FILE="$NODE_RUN_DIR/blockchain.conf"
 
@@ -473,8 +477,10 @@ waves {
   network {
     bind-address = "0.0.0.0"
     port = $LOCAL_P2P_PORT
+    declared-address = "$MY_PUBLIC_IP:$LOCAL_P2P_PORT"
     known-peers = ["$PEER_HOST:$PEER_P2P_PORT"]
     node-name = "$RUN_DIR_NAME"
+    enable-peers-exchange = yes
     traffic-watcher {
       stop-sending-threshold = 100 MB
     }
