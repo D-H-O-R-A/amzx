@@ -299,77 +299,58 @@ PEER_P2P_PORT=${PEER_P2P_PORT:-6868}
 read -p "URL REST API do Validador para consulta de saldo [default: https://${PEER_HOST}]: " PEER_API_URL
 PEER_API_URL=${PEER_API_URL:-https://${PEER_HOST}}
 
-# Derivar chaves e endereço usando Java / Fat JAR
-TEMP_KEY_DIR=$(mktemp -d)
-cat << 'EOF' > "$TEMP_KEY_DIR/Deriver.java"
-import java.nio.charset.StandardCharsets;
+# Derivar chaves e endereço usando o GenesisBlockGenerator nativo da blockchain
+TEMP_GEN_DIR=$(mktemp -d)
+cat <<EOF > "$TEMP_GEN_DIR/temp-gen.conf"
+genesis-generator {
+  network-type = "$CHAIN_ID"
+  base-target = null
+  average-block-delay = 60s
+  timestamp = $(date +%s%3N)
+  distributions = [
+    { seed-text = "$SEED_PHRASE", amount = 100000000, miner = true }
+  ]
+}
+EOF
 
-public class Deriver {
-    public static void main(String[] args) {
-        try {
-            String seedStr = args[0];
-            char chainId = args[1].charAt(0);
-            String apiKey = args[2];
+java -cp "$FAT_JAR" com.wavesplatform.GenesisBlockGenerator "$TEMP_GEN_DIR/temp-gen.conf" "$TEMP_GEN_DIR/temp-gen-out.conf" > "$TEMP_GEN_DIR/raw_output.txt" 2>&1
 
-            // 1. Chave Blake2b API Key Hash
-            byte[] apiKeyBytes = apiKey.getBytes(StandardCharsets.UTF_8);
-            byte[] apiKeyHashBytes = com.wavesplatform.crypto.package$.MODULE$.secureHash(apiKeyBytes);
-            String apiKeyHash = com.wavesplatform.common.utils.Base58$.MODULE$.encode(apiKeyHashBytes);
+ACCOUNT_ADDRESS=$(grep -i "Account address:" "$TEMP_GEN_DIR/raw_output.txt" | awk -F': ' '{print $2}' | tr -d '[:space:]')
+PUBLIC_KEY=$(grep -i "Public account key:" "$TEMP_GEN_DIR/raw_output.txt" | awk -F': ' '{print $2}' | tr -d '[:space:]')
+PRIVATE_KEY=$(grep -i "Private account key:" "$TEMP_GEN_DIR/raw_output.txt" | awk -F': ' '{print $2}' | tr -d '[:space:]')
+SEED_BASE58=$(grep -i "Seed:" "$TEMP_GEN_DIR/raw_output.txt" | head -n 1 | awk -F': ' '{print $2}' | tr -d '[:space:]')
 
-            // 2. Tratar Seed Phrase (texto com espacos) ou Base58
-            byte[] seedBytes;
-            if (!seedStr.contains(" ")) {
-                scala.util.Try<byte[]> tryB58 = com.wavesplatform.common.utils.Base58$.MODULE$.tryDecodeWithLimit(seedStr);
-                if (tryB58.isSuccess()) {
-                    seedBytes = tryB58.get();
-                } else {
-                    seedBytes = seedStr.getBytes(StandardCharsets.UTF_8);
-                }
-            } else {
-                seedBytes = seedStr.getBytes(StandardCharsets.UTF_8);
-            }
+if [ -z "$ACCOUNT_ADDRESS" ]; then
+    echo -e "${RED}${BOLD}[ERRO] Não foi possível derivar o endereço da conta a partir da Seed informada.${NC}"
+    echo -e "${YELLOW}Detalhes da execução do gerador nativo:${NC}"
+    cat "$TEMP_GEN_DIR/raw_output.txt"
+    rm -rf "$TEMP_GEN_DIR"
+    exit 1
+fi
 
-            // 3. Derivar SeedKeyPair nativo da blockchain via Wallet
-            com.wavesplatform.account.SeedKeyPair kp = com.wavesplatform.wallet.Wallet$.MODULE$.generateNewAccount(seedBytes, 0);
-
-            byte[] privKey = kp.privateKey().arr();
-            byte[] pubKey = kp.publicKey().arr();
-            String privKeyB58 = com.wavesplatform.common.utils.Base58$.MODULE$.encode(privKey);
-            String pubKeyB58 = com.wavesplatform.common.utils.Base58$.MODULE$.encode(pubKey);
-
-            // 4. Gerar endereço para o Chain ID específico
-            com.wavesplatform.account.Address addr = com.wavesplatform.account.Address$.MODULE$.fromPublicKey(kp.publicKey(), (byte) chainId);
-            String addressStr = addr.toString();
-
-            System.out.println("DERIVED_ADDRESS:" + addressStr);
-            System.out.println("DERIVED_PUBKEY:" + pubKeyB58);
-            System.out.println("DERIVED_PRIVKEY:" + privKeyB58);
-            System.out.println("API_KEY_HASH:" + apiKeyHash);
-        } catch (Exception e) {
-            e.printStackTrace(System.err);
-            System.exit(1);
-        }
+# Gerar API_KEY_HASH usando HashGenerator
+cat << 'EOF' > "$TEMP_GEN_DIR/HashGen.java"
+public class HashGen {
+    public static void main(String[] args) throws Exception {
+        byte[] bytes = args[0].getBytes("UTF-8");
+        byte[] hashed = com.wavesplatform.crypto.package$.MODULE$.secureHash(bytes);
+        String base58 = com.wavesplatform.common.utils.Base58$.MODULE$.encode(hashed);
+        System.out.println(base58);
     }
 }
 EOF
 
-KEY_OUT=""
+API_KEY_HASH=""
 if command -v javac &>/dev/null; then
-    javac -cp "$FAT_JAR" -d "$TEMP_KEY_DIR" "$TEMP_KEY_DIR/Deriver.java" 2>/dev/null || true
-    if [ -f "$TEMP_KEY_DIR/Deriver.class" ]; then
-        KEY_OUT=$(java -cp "$FAT_JAR:$TEMP_KEY_DIR" Deriver "$SEED_PHRASE" "$CHAIN_ID" "$REST_API_KEY" 2>&1)
+    javac -cp "$FAT_JAR" -d "$TEMP_GEN_DIR" "$TEMP_GEN_DIR/HashGen.java" 2>/dev/null || true
+    if [ -f "$TEMP_GEN_DIR/HashGen.class" ]; then
+        API_KEY_HASH=$(java -cp "$TEMP_GEN_DIR:$FAT_JAR" HashGen "$REST_API_KEY" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
     fi
 fi
-
-if [ -z "$KEY_OUT" ] || [[ "$KEY_OUT" =~ "Exception" ]]; then
-    KEY_OUT=$(java -cp "$FAT_JAR" "$TEMP_KEY_DIR/Deriver.java" "$SEED_PHRASE" "$CHAIN_ID" "$REST_API_KEY" 2>&1)
+if [ -z "$API_KEY_HASH" ]; then
+    API_KEY_HASH=$(java -cp "$FAT_JAR" "$TEMP_GEN_DIR/HashGen.java" "$REST_API_KEY" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
 fi
-rm -rf "$TEMP_KEY_DIR"
-
-ACCOUNT_ADDRESS=$(echo "$KEY_OUT" | grep "DERIVED_ADDRESS:" | cut -d':' -f2 | tr -d '[:space:]')
-PUBLIC_KEY=$(echo "$KEY_OUT" | grep "DERIVED_PUBKEY:" | cut -d':' -f2 | tr -d '[:space:]')
-PRIVATE_KEY=$(echo "$KEY_OUT" | grep "DERIVED_PRIVKEY:" | cut -d':' -f2 | tr -d '[:space:]')
-API_KEY_HASH=$(echo "$KEY_OUT" | grep "API_KEY_HASH:" | cut -d':' -f2 | tr -d '[:space:]')
+rm -rf "$TEMP_GEN_DIR"
 
 echo -e "  - Seu Endereço:      🛡️  ${GREEN}${BOLD}$ACCOUNT_ADDRESS${NC}"
 echo -e "  - Chave Pública:     🔑 ${CYAN}$PUBLIC_KEY${NC}"
