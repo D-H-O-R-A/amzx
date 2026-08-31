@@ -3,7 +3,8 @@
 # 🔷 AMZX NETWORK - NODE & VALIDATOR ONBOARDING WIZARD
 # ==============================================================================
 # Interactive tool for new users/operators to join an existing AMZX blockchain
-# network as a Validator (Mining/Forging Node) or a Full Peer Node (Sync/API).
+# network as a Validator (Mining/Forging Node) or a Full Peer Node (Sync/API),
+# with automated Nginx reverse proxy and SSL (Certbot) configuration.
 # ==============================================================================
 
 set -uo pipefail
@@ -29,7 +30,7 @@ echo -e "${YELLOW}Este assistente configura e inicializa a sua conexão a uma bl
 # ------------------------------------------------------------------------------
 # STEP 1: VERIFICAR PRÉ-REQUISITOS (JAVA & FAT JAR)
 # ------------------------------------------------------------------------------
-echo -e "🔷 ${CYAN}${BOLD}[1/7] Verificação do Ambiente e Compilação${NC}"
+echo -e "🔷 ${CYAN}${BOLD}[1/8] Verificação do Ambiente e Compilação${NC}"
 
 if ! command -v java &>/dev/null; then
     echo -e "${RED}${BOLD}[ERRO] Java 17 não encontrado. Instale com: sudo apt install openjdk-17-jdk -y${NC}"
@@ -57,7 +58,7 @@ echo
 # ------------------------------------------------------------------------------
 # STEP 2: ESCOLHA DO PAPEL NA REDE (ROLE)
 # ------------------------------------------------------------------------------
-echo -e "🔷 ${CYAN}${BOLD}[2/7] Seleção de Perfil na Rede${NC}"
+echo -e "🔷 ${CYAN}${BOLD}[2/8] Seleção de Perfil na Rede${NC}"
 echo -e "  1) ${BOLD}Validador / Minerador PoS${NC} (Forja e valida blocos na rede via Proof-of-Stake)"
 echo -e "  2) ${BOLD}Nó Completo / Sincronizador${NC} (Apenas baixa blocos, serve API e propaga transações)"
 echo
@@ -76,7 +77,7 @@ echo
 # ------------------------------------------------------------------------------
 # STEP 3: CRIAÇÃO / IMPORTAÇÃO DA SEED E SENHAS
 # ------------------------------------------------------------------------------
-echo -e "🔷 ${CYAN}${BOLD}[3/7] Carteira, Seed e Chaves Criptográficas${NC}"
+echo -e "🔷 ${CYAN}${BOLD}[3/8] Carteira, Seed e Chaves Criptográficas${NC}"
 echo -e "  1) Gerar uma ${BOLD}nova Seed Mnemônica aleatória${NC} segura"
 echo -e "  2) Importar uma ${BOLD}Seed existente${NC}"
 echo
@@ -91,7 +92,7 @@ if [ "$SEED_OPT" = "2" ]; then
         exit 1
     fi
 else
-    # Gerar seed aleatória usando python / openssl
+    # Gerar seed aleatória usando python
     SEED_PHRASE=$(python3 -c "
 import secrets
 words = ['planet', 'quantum', 'galaxy', 'matrix', 'orbital', 'crypto', 'blockchain', 'validator', 'consensus', 'harmony', 'solar', 'vector', 'genesis', 'alpha', 'node', 'zenith', 'pulse', 'strata', 'beacon', 'infinity']
@@ -141,7 +142,7 @@ echo
 # ------------------------------------------------------------------------------
 # STEP 4: IMPORTAÇÃO E PARSER DO BLOCO GENESIS
 # ------------------------------------------------------------------------------
-echo -e "🔷 ${CYAN}${BOLD}[4/7] Configuração do Bloco Genesis da Blockchain${NC}"
+echo -e "🔷 ${CYAN}${BOLD}[4/8] Configuração do Bloco Genesis da Blockchain${NC}"
 echo -e "Você pode informar o Bloco Genesis de 3 formas:"
 echo -e "  1) Colar o JSON do Bloco Genesis (ex: bloco height 1 exportado ou gerado)"
 echo -e "  2) Informar o caminho de um arquivo local (ex: genesis.json ou blockchain.conf)"
@@ -288,7 +289,7 @@ echo
 # ------------------------------------------------------------------------------
 # STEP 5: PEER CONHECIDO (IP DO VALIDADOR) & DERIVAÇÃO DO ENDEREÇO
 # ------------------------------------------------------------------------------
-echo -e "🔷 ${CYAN}${BOLD}[5/7] Conexão P2P & Consulta de Saldo no Validador${NC}"
+echo -e "🔷 ${CYAN}${BOLD}[5/8] Conexão P2P & Consulta de Saldo no Validador${NC}"
 
 read -p "Digite o IP ou Domínio de um Validador existente (ex: nodes.planetone.io ou 123.45.67.89): " PEER_HOST
 PEER_HOST=${PEER_HOST:-nodes.planetone.io}
@@ -384,7 +385,7 @@ echo
 # ------------------------------------------------------------------------------
 # STEP 6: CRIAÇÃO DA PASTA ISOLADA E ARQUIVOS DE CONFIGURAÇÃO
 # ------------------------------------------------------------------------------
-echo -e "🔷 ${CYAN}${BOLD}[6/7] Criação da Pasta de Execução e Arquivos de Configuração${NC}"
+echo -e "🔷 ${CYAN}${BOLD}[6/8] Criação da Pasta de Execução e Arquivos de Configuração${NC}"
 
 RUN_DIR_NAME="run-node-$CHAIN_ID"
 if [ "$IS_VALIDATOR" = true ]; then
@@ -425,7 +426,7 @@ if [ "$IS_VALIDATOR" = true ]; then
     MINER_ENABLED="yes"
 fi
 
-# Gerar blockchain.conf com wallet.dat criptografada
+# Gerar blockchain.conf com wallet.dat e seed em formato Base58
 CONF_FILE="$NODE_RUN_DIR/blockchain.conf"
 
 cat << EOF > "$CONF_FILE"
@@ -482,7 +483,7 @@ waves {
   wallet {
     file = "$NODE_RUN_DIR/node-data/wallet/wallet.dat"
     password = "$WALLET_PASSWORD"
-    seed = "$SEED_PHRASE"
+    seed = "$SEED_BASE58"
   }
 
   rest-api {
@@ -555,7 +556,7 @@ echo
 # ------------------------------------------------------------------------------
 # STEP 7: INICIALIZAÇÃO DO NÓ
 # ------------------------------------------------------------------------------
-echo -e "🔷 ${CYAN}${BOLD}[7/7] Inicialização da Sincronização${NC}"
+echo -e "🔷 ${CYAN}${BOLD}[7/8] Inicialização da Sincronização${NC}"
 echo
 read -p "Deseja iniciar o seu nó agora em segundo plano? [S/n]: " START_NOW
 START_NOW=${START_NOW:-S}
@@ -574,6 +575,85 @@ if [[ "$START_NOW" =~ ^[Ss]$ ]]; then
 else
     echo -e "Para iniciar o nó manualmente mais tarde, execute:"
     echo -e "  👉 ${CYAN}cd $NODE_RUN_DIR && nohup ./start-node.sh < /dev/null > node.log 2>&1 &${NC}"
+fi
+echo
+
+# ------------------------------------------------------------------------------
+# STEP 8: CONFIGURAÇÃO DE SUBDOMÍNIO NGINX E SSL (CERTBOT)
+# ------------------------------------------------------------------------------
+echo -e "🔷 ${CYAN}${BOLD}[8/8] Configuração de Subdomínio Público (Nginx + SSL Certbot)${NC}"
+read -p "Deseja configurar um subdomínio reverso no Nginx com certificado SSL (HTTPS) gratuito via Certbot? [s/N]: " SETUP_DOMAIN
+SETUP_DOMAIN=${SETUP_DOMAIN:-N}
+
+if [[ "$SETUP_DOMAIN" =~ ^[Ss]$ ]]; then
+    echo
+    read -p "Digite o subdomínio completo para a REST API do nó (ex: validator2.planetone.io ou node.seudominio.com): " NODE_DOMAIN
+    if [ -n "$NODE_DOMAIN" ]; then
+        read -p "Digite o seu e-mail para registro do certificado SSL no Certbot: " CERTBOT_EMAIL
+        CERTBOT_EMAIL=${CERTBOT_EMAIL:-admin@$NODE_DOMAIN}
+
+        # Instalar Nginx se necessário
+        if ! command -v nginx &>/dev/null; then
+            echo -e "${YELLOW}Instalando Nginx...${NC}"
+            sudo apt-get update && sudo apt-get install -y nginx
+        fi
+
+        # Instalar Certbot se necessário
+        if ! command -v certbot &>/dev/null; then
+            echo -e "${YELLOW}Instalando Certbot...${NC}"
+            sudo apt-get update && sudo apt-get install -y certbot python3-certbot-nginx
+        fi
+
+        # Criar arquivo de configuração do Nginx
+        NGINX_CONF="/etc/nginx/sites-available/node-$NODE_DOMAIN.conf"
+        echo -e "${CYAN}Criando configuração do Nginx em $NGINX_CONF...${NC}"
+        
+        sudo tee "$NGINX_CONF" > /dev/null << EOF
+server {
+    listen 80;
+    server_name $NODE_DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:$LOCAL_REST_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+EOF
+
+        # Criar symlink em sites-enabled
+        if [ ! -f "/etc/nginx/sites-enabled/node-$NODE_DOMAIN.conf" ]; then
+            sudo ln -s "$NGINX_CONF" "/etc/nginx/sites-enabled/"
+        fi
+
+        # Testar Nginx e Recarregar
+        if sudo nginx -t; then
+            echo -e "✅ ${GREEN}Sintaxe do Nginx válida! Recarregando serviço...${NC}"
+            sudo systemctl reload nginx 2>/dev/null || sudo systemctl restart nginx 2>/dev/null || true
+
+            # Solicitar Certificado SSL via Certbot
+            echo -e "${CYAN}Solicitando certificado SSL para ${BOLD}$NODE_DOMAIN${NC}...${NC}"
+            sudo certbot --nginx \
+                -d "$NODE_DOMAIN" \
+                --non-interactive \
+                --agree-tos \
+                --expand \
+                -m "$CERTBOT_EMAIL" 2>&1 || true
+
+            echo
+            echo -e "🎉 ${GREEN}${BOLD}Subdomínio público configurado com sucesso!${NC}"
+            echo -e "👉 ${CYAN}API Pública:  https://$NODE_DOMAIN${NC}"
+            echo -e "👉 ${CYAN}Swagger UI:   https://$NODE_DOMAIN/api-docs/index.html${NC}"
+            echo -e "👉 ${CYAN}Bloco Height: https://$NODE_DOMAIN/blocks/height${NC}"
+        else
+            echo -e "${RED}[AVISO] O teste do Nginx falhou. Verifique os arquivos em /etc/nginx/sites-enabled/${NC}"
+        fi
+    fi
 fi
 
 echo
