@@ -87,6 +87,29 @@ cd amz-network-wizard
 
 *(You can optionally pass a custom seed phrase as an argument: `./reset-matcher-explorer.sh "your custom seed phrase"`. If no argument is provided, it automatically reuses and converts the Genesis Seed from your active `blockchain.conf`).*
 
+---
+
+## 🩺 AMZX Network Doctor & Auto-Healer
+
+The **AMZX Doctor** (`./amzx-doctor.sh`) is an automated diagnostic, audit, and self-healing tool created exclusively for the AMZX Blockchain Network.
+
+### 🛡️ Features & Auto-Recovery:
+- **Port 80 Conflict Resolver:** Detects and automatically disables Apache2 if it starts up during server reboots, ensuring Nginx has sole control over port 80.
+- **Nginx Reverse Proxy Restorer:** Validates Nginx syntax, cleans duplicate vhost configs, and restarts the Nginx web server if it entered a failed state.
+- **Blockchain Node Auto-Heal:** Detects if the AMZX Node (`start-node.sh` on port 6869) stopped and resumes block mining and validation from the current block height **without wiping or altering any LevelDB data**.
+- **Matcher DEX Auto-Heal:** Checks REST port 6886 and restarts Matcher DEX if needed without losing orderbook state.
+- **Data Service & PostgreSQL Check:** Verifies the PostgreSQL database (port 5432), Data Service API (port 3000), and Docker sync containers.
+- **Real-Time HTTPS Endpoints Testing:** Runs live status health-checks on public subdomains (`nodes.*`, `matcher.*`, `rpc.*`, `data-service.*`).
+
+### 🚀 Usage:
+```bash
+# Run the AMZX Network Doctor from the project root:
+./amzx-doctor.sh
+
+# Or from inside amz-network-wizard:
+cd amz-network-wizard
+./amzx-doctor.sh
+```
 
 ---
 
