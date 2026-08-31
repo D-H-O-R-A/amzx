@@ -85,7 +85,27 @@ cd amz-network-wizard
 ./reset-matcher-explorer.sh
 ```
 
-*(You can optionally pass a custom seed phrase as an argument: `./reset-matcher-explorer.sh "your custom seed phrase"`. If no argument is provided, it automatically reuses and converts the Genesis Seed from your active `blockchain.conf`).*
+---
+
+## 🤝 Node & Validator Onboarding Wizard (join-network.sh)
+
+For new operators and community members wishing to join an existing AMZX blockchain network as a **Validator (Mining / Staking PoS)** or a **Full Syncing Node (API / Peer)**, use the onboarding wizard:
+
+```bash
+# Run from the project root:
+./join-network.sh
+
+# Or from inside amz-network-wizard:
+cd amz-network-wizard
+./join-network.sh
+```
+
+### 🛡️ Security & Genesis Flexibility:
+- **Role Selection:** Choose between **Validator / PoS Miner** (`miner.enable = yes`) or **Full Node / Sync Peer** (`miner.enable = no`).
+- **Encrypted Wallet Storage (`wallet.dat`):** Keys and seed phrases are stored inside a secured `.dat` file encrypted via **PBKDF2 (999,999 iterations) + AES-128**. The node requires the wallet password to decrypt the keystore on startup.
+- **Flexible Genesis Input:** Accepts raw pasted Genesis Block JSON (with `transactions`, `nxt-consensus`, `signatures`), `genesis.json` files, or existing `blockchain.conf` configs. Automatically extracts the **Chain ID** and consensus settings.
+- **Pre-flight Balance Verification:** Queries the candidate address on the specified validator node before starting. Informs the operator if the account meets the **1,000 coin minimum generating balance** required for active block forging.
+- **Isolated Run Directory:** Provisions an independent `run-node-[CHAIN_ID]` / `run-validator-[CHAIN_ID]` folder with dedicated `start-node.sh` and `stop-node.sh` scripts, fully compatible with `amzx-doctor.sh`.
 
 ---
 
