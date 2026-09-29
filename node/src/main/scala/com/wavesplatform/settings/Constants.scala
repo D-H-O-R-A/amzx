@@ -5,7 +5,7 @@ import com.wavesplatform.Version
 /** System constants here.
   */
 object Constants {
-  val ApplicationName = "amzx"
+  val ApplicationName = "waves"
   val AgentName       = s"Amzx v${Version.VersionString}"
 
   val UnitsInWave = 100000000L
