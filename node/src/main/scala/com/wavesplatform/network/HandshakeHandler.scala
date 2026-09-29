@@ -97,7 +97,10 @@ abstract class HandshakeHandler(
     case remoteHandshake: Handshake =>
       val verifiedDeclaredAddress = remoteHandshake.declaredAddress.filter(_ == ctx.channel().remoteAddress())
 
-      if (localHandshake.applicationName != remoteHandshake.applicationName)
+      val isCompatibleAppName = localHandshake.applicationName == remoteHandshake.applicationName ||
+        localHandshake.applicationName.replace("amzx", "waves") == remoteHandshake.applicationName.replace("amzx", "waves")
+
+      if (!isCompatibleAppName)
         suspendAndClose(
           s"Remote application name ${remoteHandshake.applicationName} does not match local ${localHandshake.applicationName}",
           verifiedDeclaredAddress,

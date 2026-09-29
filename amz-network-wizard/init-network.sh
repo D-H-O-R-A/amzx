@@ -1002,12 +1002,14 @@ else:
             target = miner_block.group(1)
             content = content.replace(target, target + f"\n    private-keys = [\"{private_key}\"]")
 
-# 3. Ensure declared-address and enable-peers-exchange in network block
-if "declared-address" not in content:
-    network_match = re.search(r"(network\s*\{[^}]+port\s*=[^\n]+)", content)
-    if network_match:
-        target = network_match.group(1)
-        content = content.replace(target, target + f"\n    declared-address = \"{my_public_ip}:{p2p_port}\"\n    enable-peers-exchange = yes")
+# 3. Ensure declared-address, enable-peers-exchange and bind-address in network block
+if "network" in content:
+    content = re.sub(r"(network\s*\{[^}]*bind-address\s*=\s*)\"127\.0\.0\.1\"", "\\g<1>\"0.0.0.0\"", content)
+    if "declared-address" not in content:
+        network_match = re.search(r"(network\s*\{[^}]+port\s*=[^\n]+)", content)
+        if network_match:
+            target = network_match.group(1)
+            content = content.replace(target, target + f"\n    declared-address = \"{my_public_ip}:{p2p_port}\"\n    enable-peers-exchange = yes")
 
 with open(blockchain_conf, "w", encoding="utf-8") as f:
     f.write(content)

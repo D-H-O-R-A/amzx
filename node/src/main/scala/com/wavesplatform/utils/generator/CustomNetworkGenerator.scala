@@ -109,7 +109,7 @@ waves {
   }
 
   network {
-    bind-address = "127.0.0.1"
+    bind-address = "0.0.0.0"
     port = 6868
     known-peers = []
     node-name = "amz-private-node"

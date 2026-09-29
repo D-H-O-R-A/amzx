@@ -81,33 +81,53 @@ if command -v systemctl &>/dev/null; then
             echo -e "  ❌ ${RED}Erro na sintaxe de configuração do Nginx (nginx -t falhou).${NC}"
         fi
     fi
+    # Verificar se existe configuração de nó secundário (node-*.conf) com porta incorreta
+    for nconf in /etc/nginx/sites-enabled/node-*.conf /etc/nginx/sites-available/node-*.conf; do
+        if [ -f "$nconf" ]; then
+            NODE_ACTIVE_PORT=""
+            if ss -tulpn 2>/dev/null | grep -q ":6869 "; then
+                NODE_ACTIVE_PORT=6869
+            elif ss -tulpn 2>/dev/null | grep -q ":6879 "; then
+                NODE_ACTIVE_PORT=6879
+            fi
+            if [ -n "$NODE_ACTIVE_PORT" ]; then
+                CONF_PORT=$(grep -oE "proxy_pass http://127.0.0.1:[0-9]+" "$nconf" | head -n 1 | awk -F':' '{print $3}')
+                if [ -n "$CONF_PORT" ] && [ "$CONF_PORT" != "$NODE_ACTIVE_PORT" ]; then
+                    echo -e "  ⚠️  ${YELLOW}Detectado Nginx em $(basename "$nconf") apontando para porta $CONF_PORT, mas o nó está na $NODE_ACTIVE_PORT! Corrigindo...${NC}"
+                    sed -i "s/127\.0\.0\.1:$CONF_PORT/127\.0\.0\.1:$NODE_ACTIVE_PORT/g" "$nconf"
+                    nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null || true
+                    echo -e "  ✅ ${GREEN}Proxy reajustado para porta $NODE_ACTIVE_PORT e Nginx recarregado!${NC}"
+                fi
+            fi
+        fi
+    done
 else
     echo -e "  - Systemctl não disponível neste ambiente."
 fi
 echo
 
 # ------------------------------------------------------------------------------
-# 2. DETECÇÃO DA PASTA DE EXECUÇÃO DA REDE AMZX (run-amzx-*)
+# 2. DETECÇÃO DA PASTA DE EXECUÇÃO DA REDE AMZX (run-amzx-*, run-validator-*, run-node-*)
 # ------------------------------------------------------------------------------
 echo -e "🔷 ${CYAN}${BOLD}[2/5] Detecção da Configuração da Rede Ativa${NC}"
 
 RUN_DIR=""
 if [ -d "$WIZARD_DIR" ]; then
-    RUN_DIR=$(find "$WIZARD_DIR" -maxdepth 1 -name "run-amzx-*" -type d | head -n 1)
+    RUN_DIR=$(find "$WIZARD_DIR" -maxdepth 1 \( -name "run-amzx-*" -o -name "run-validator-*" -o -name "run-node-*" \) -type d | head -n 1)
 fi
 
 if [ -z "$RUN_DIR" ] || [ ! -d "$RUN_DIR" ]; then
-    RUN_DIR=$(find "$SCRIPT_DIR" -maxdepth 2 -name "run-amzx-*" -type d 2>/dev/null | head -n 1)
+    RUN_DIR=$(find "$SCRIPT_DIR" -maxdepth 2 \( -name "run-amzx-*" -o -name "run-validator-*" -o -name "run-node-*" \) -type d 2>/dev/null | head -n 1)
 fi
 
 if [ -n "$RUN_DIR" ] && [ -d "$RUN_DIR" ]; then
     echo -e "  - Pasta de Rede:     📁 ${GREEN}${BOLD}$RUN_DIR${NC}"
     
     # Extrair Chain ID se existir
-    CHAIN_ID=$(basename "$RUN_DIR" | sed 's/run-amzx-//')
+    CHAIN_ID=$(basename "$RUN_DIR" | sed -E 's/run-(amzx|validator|node)-//')
     echo -e "  - Chain ID:          🔷 ${CYAN}${BOLD}$CHAIN_ID${NC}"
 else
-    echo -e "  ⚠️  ${YELLOW}Nenhuma pasta de execução 'run-amzx-*' encontrada em $WIZARD_DIR${NC}"
+    echo -e "  ⚠️  ${YELLOW}Nenhuma pasta de execução 'run-*' encontrada em $WIZARD_DIR${NC}"
 fi
 echo
 
@@ -144,12 +164,22 @@ if [ -n "$RUN_DIR" ] && [ -f "$RUN_DIR/blockchain.conf" ]; then
     if [ -n "$CONF_P2P" ]; then
         P2P_PORT="$CONF_P2P"
     fi
+
+    # Verificar se bind-address está incorretamente como 127.0.0.1
+    if grep -A 5 "network {" "$RUN_DIR/blockchain.conf" 2>/dev/null | grep -q 'bind-address = "127.0.0.1"'; then
+        echo -e "  ⚠️  ${YELLOW}Detectado network.bind-address = '127.0.0.1'. Corrigindo para '0.0.0.0' para permitir P2P externo...${NC}"
+        sed -i '/network {/,/}/ s/bind-address = "127.0.0.1"/bind-address = "0.0.0.0"/' "$RUN_DIR/blockchain.conf"
+        echo -e "  ✅ ${GREEN}blockchain.conf atualizado com bind-address = '0.0.0.0'.${NC}"
+    fi
 fi
 
-if ss -tulpn 2>/dev/null | grep -q ":$P2P_PORT "; then
+if ss -tulpn 2>/dev/null | grep -E "(0\.0\.0\.0|\*):$P2P_PORT "; then
     PEER_COUNT=$(curl -s -m 2 http://127.0.0.1:6869/peers/connected 2>/dev/null | grep -o '"address"' | wc -l || echo "0")
-    echo -e "  - Porta P2P ($P2P_PORT):    🟢 ${GREEN}${BOLD}ONLINE (Escutando conexões externas)${NC}"
+    echo -e "  - Porta P2P ($P2P_PORT):    🟢 ${GREEN}${BOLD}ONLINE (Escutando conexões externas em 0.0.0.0)${NC}"
     echo -e "  - Peers Conectados:  🤝 ${CYAN}$PEER_COUNT peers ativos${NC}"
+elif ss -tulpn 2>/dev/null | grep -q "127\.0\.0\.1:$P2P_PORT "; then
+    echo -e "  - Porta P2P ($P2P_PORT):    🟡 ${YELLOW}${BOLD}AVISO: Escutando APENAS em 127.0.0.1 (Conexões externas bloqueadas)${NC}"
+    echo -e "    Dica: Execute ./amzx-doctor.sh --restart para aplicar o bind em 0.0.0.0."
 else
     echo -e "  - Porta P2P ($P2P_PORT):    🔴 ${RED}${BOLD}OFFLINE / Não escutando${NC}"
 fi
@@ -179,7 +209,9 @@ echo
 echo -e "🔷 ${CYAN}${BOLD}[4/5] Matcher DEX AMZX (Orderbook & Engine de Negociação)${NC}"
 
 MATCHER_ONLINE=false
-if ss -tulpn 2>/dev/null | grep -q ":6886 " || curl -s -m 2 http://127.0.0.1:6886/matcher &>/dev/null; then
+if [ -n "$RUN_DIR" ] && [[ "$(basename "$RUN_DIR")" =~ run-(validator|node)- ]]; then
+    echo -e "  - Status Matcher:    ⚪ ${CYAN}Dispensado (Instância de Nó Secundário/Validador)${NC}"
+elif ss -tulpn 2>/dev/null | grep -q ":6886 " || curl -s -m 2 http://127.0.0.1:6886/matcher &>/dev/null; then
     MATCHER_ONLINE=true
     echo -e "  - Status Matcher:    🟢 ${GREEN}${BOLD}ONLINE (Porta 6886)${NC}"
 else
