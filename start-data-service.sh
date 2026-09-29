@@ -380,7 +380,70 @@ EOF
         echo -e "    -> Routing API endpoints to Node Data-Service (Port 3000)"
         echo -e "    -> Routing root '/' and Assets to Swagger UI (Port 8080)"
         
-        cat <<EOF > "$NGINX_CONF"
+        CERT_DIR="/etc/letsencrypt/live/nodes.$BASE_DOMAIN"
+        if [ ! -d "$CERT_DIR" ]; then
+          CERT_DIR=$(find /etc/letsencrypt/live -name "fullchain.pem" 2>/dev/null | grep "$BASE_DOMAIN" | head -n 1 | xargs -r dirname)
+        fi
+
+        if [ -n "$CERT_DIR" ] && [ -f "$CERT_DIR/fullchain.pem" ]; then
+          echo -e "🔐 ${GREEN}Certificado SSL existente detectado em $CERT_DIR. Habilitando HTTPS (Porta 443)...${NC}"
+          cat <<EOF > "$NGINX_CONF"
+# AMZX Data Service & Swagger UI Unified Router Proxy (HTTP -> HTTPS)
+server {
+    listen 80;
+    server_name $SUBDOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+# AMZX Data Service & Swagger UI Unified Router Proxy (HTTPS: 443)
+server {
+    listen 443 ssl http2;
+    server_name $SUBDOMAIN;
+
+    ssl_certificate $CERT_DIR/fullchain.pem;
+    ssl_certificate_key $CERT_DIR/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # 1. API Endpoints WITH /v0/ prefix (Nginx automatically strips /v0/ and proxies remaining URI)
+    location /v0/ {
+        proxy_pass http://127.0.0.1:3000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # 2. API Endpoints WITHOUT /v0/ prefix (Direct proxy to NodeJS)
+    location ~ ^/(assets|pairs|transactions|candles|aliases|matchers|version) {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # 3. Unified Root '/' and UI Assets - Route directly to Swagger UI Container (Port 8080)
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+        else
+          cat <<EOF > "$NGINX_CONF"
 # AMZX Data Service & Swagger UI Unified Router Proxy
 server {
     listen 80;
@@ -410,7 +473,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    # 2. Unified Root '/' and UI Assets - Route directly to Swagger UI Container (Port 8080)
+    # 3. Unified Root '/' and UI Assets - Route directly to Swagger UI Container (Port 8080)
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
@@ -423,32 +486,42 @@ server {
     }
 }
 EOF
+        fi
 
         # Enable configuration
         ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/amzx-data-service.conf"
+
+        # Liberar portas no firewall UFW
+        if command -v ufw &>/dev/null; then
+          sudo ufw allow 80/tcp 2>/dev/null || true
+          sudo ufw allow 443/tcp 2>/dev/null || true
+          sudo ufw allow 3000/tcp 2>/dev/null || true
+        fi
 
         echo -e "🛡️  ${CYAN}Testing Nginx configuration...${NC}"
         if nginx -t; then
           systemctl reload nginx
           echo -e "✅ ${GREEN}Nginx reverse proxy created successfully!${NC}"
           
-          # Certbot execution
-          echo -e "🔑 ${CYAN}Requesting SSL certificate via Certbot for $SUBDOMAIN...${NC}"
-          if command -v certbot &> /dev/null; then
-            certbot --nginx \
-              -d "$SUBDOMAIN" \
-              --expand \
-              --non-interactive \
-              --agree-tos \
-              -m "$CERTBOT_EMAIL"
-            
-            if [ $? -eq 0 ]; then
-              echo -e "🎉 ${GREEN}${BOLD}SSL Certificate active! Secure routing is live!${NC}"
+          # Se não tínhamos certificado antes, solicitar via Certbot
+          if [ -z "$CERT_DIR" ] || [ ! -f "$CERT_DIR/fullchain.pem" ]; then
+            echo -e "🔑 ${CYAN}Requesting SSL certificate via Certbot for $SUBDOMAIN...${NC}"
+            if command -v certbot &> /dev/null; then
+              certbot --nginx \
+                -d "$SUBDOMAIN" \
+                --expand \
+                --non-interactive \
+                --agree-tos \
+                -m "$CERTBOT_EMAIL"
+              
+              if [ $? -eq 0 ]; then
+                echo -e "🎉 ${GREEN}${BOLD}SSL Certificate active! Secure routing is live!${NC}"
+              else
+                echo -e "❌ ${RED}Certbot failed to acquire SSL certificates. Please check DNS propagation.${NC}"
+              fi
             else
-              echo -e "❌ ${RED}Certbot failed to acquire SSL certificates. Please check DNS propagation.${NC}"
+              echo -e "⚠️  ${YELLOW}Certbot is not installed. Skipping automatic SSL acquisition.${NC}"
             fi
-          else
-            echo -e "⚠️  ${YELLOW}Certbot is not installed. Skipping automatic SSL acquisition.${NC}"
           fi
         else
           echo -e "❌ ${RED}Nginx configuration test failed. Reverting changes...${NC}"

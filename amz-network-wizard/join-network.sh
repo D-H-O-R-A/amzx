@@ -290,8 +290,12 @@ echo
 # STEP 5: PEER CONHECIDO (IP DO VALIDADOR) & DERIVAÇÃO DO ENDEREÇO
 # ------------------------------------------------------------------------------
 echo -e "🔷 ${CYAN}${BOLD}[5/8] Conexão P2P & Consulta de Saldo no Validador${NC}"
+echo -e "${YELLOW}⚠️  ATENÇÃO SOBRE CONEXÃO P2P:${NC}"
+echo -e "Se o validador utiliza Cloudflare (nuvem laranja ativada), o Cloudflare NÃO faz proxy da porta TCP 6868."
+echo -e "Nesse caso, informe o ${BOLD}IP público direto da VPS${NC} do validador (ex: 2.25.174.160) ou um subdomínio DNS-only."
+echo
 
-read -p "Digite o IP ou Domínio de um Validador existente (ex: nodes.planetone.io ou 123.45.67.89): " PEER_HOST
+read -p "Digite o IP ou Domínio de um Validador existente (ex: 2.25.174.160 ou nodes.planetone.io): " PEER_HOST
 PEER_HOST=${PEER_HOST:-nodes.planetone.io}
 
 read -p "Porta P2P do Validador [default: 6868]: " PEER_P2P_PORT
@@ -299,6 +303,32 @@ PEER_P2P_PORT=${PEER_P2P_PORT:-6868}
 
 read -p "URL REST API do Validador para consulta de saldo [default: https://${PEER_HOST}]: " PEER_API_URL
 PEER_API_URL=${PEER_API_URL:-https://${PEER_HOST}}
+
+# Teste prévio de conectividade TCP com a porta P2P do validador
+echo -e "📡 ${CYAN}Testando conectividade TCP com ${PEER_HOST}:${PEER_P2P_PORT}...${NC}"
+P2P_REACHABLE=false
+if command -v nc &>/dev/null; then
+    if nc -z -w 3 "$PEER_HOST" "$PEER_P2P_PORT" &>/dev/null; then
+        P2P_REACHABLE=true
+    fi
+elif (echo >/dev/tcp/"$PEER_HOST"/"$PEER_P2P_PORT") &>/dev/null 2>&1; then
+    P2P_REACHABLE=true
+fi
+
+if [ "$P2P_REACHABLE" = true ]; then
+    echo -e "✅ ${GREEN}Conexão TCP com o validador na porta ${PEER_P2P_PORT} confirmada!${NC}"
+else
+    echo -e "⚠️  ${YELLOW}${BOLD}[AVISO DE CONEXÃO P2P]${NC} Não foi possível conectar na porta TCP ${PEER_P2P_PORT} de ${PEER_HOST} (Timeout ou bloqueio de firewall)."
+    echo -e "Possíveis causas:"
+    echo -e " 1. O firewall do nó principal (UFW / AWS Security Group / Oracle Cloud Ingress) ainda não liberou a porta ${PEER_P2P_PORT}/tcp."
+    echo -e " 2. Se informou um domínio com proxy do Cloudflare ativo, substitua pelo IP público direto da VPS."
+    read -p "Deseja continuar a configuração mesmo assim? [S/n]: " P2P_WARN_CONT
+    P2P_WARN_CONT=${P2P_WARN_CONT:-S}
+    if [[ ! "$P2P_WARN_CONT" =~ ^[Ss]$ ]]; then
+        echo -e "${RED}Setup cancelado pelo usuário para verificação de rede.${NC}"
+        exit 1
+    fi
+fi
 
 # Derivar chaves e endereço usando o GenesisBlockGenerator nativo da blockchain
 TEMP_GEN_DIR=$(mktemp -d)
@@ -426,9 +456,21 @@ if [ "$IS_VALIDATOR" = true ]; then
     MINER_ENABLED="yes"
 fi
 
-# Detectar IP público para declared-address P2P
-MY_PUBLIC_IP=$(curl -s -4 -m 3 https://ifconfig.me 2>/dev/null || curl -s -4 -m 3 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
-MY_PUBLIC_IP=${MY_PUBLIC_IP:-127.0.0.1}
+# Detectar IP público para declared-address P2P com confirmação do usuário
+AUTO_PUBLIC_IP=$(curl -s -4 -m 3 https://ifconfig.me 2>/dev/null || curl -s -4 -m 3 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+AUTO_PUBLIC_IP=${AUTO_PUBLIC_IP:-127.0.0.1}
+
+echo
+read -p "Digite o IP público desta VPS para conexões P2P da blockchain [default: $AUTO_PUBLIC_IP]: " MY_PUBLIC_IP
+MY_PUBLIC_IP=${MY_PUBLIC_IP:-$AUTO_PUBLIC_IP}
+echo -e "👉 ${GREEN}IP Público definido para P2P:${NC} ${BOLD}$MY_PUBLIC_IP${NC}"
+echo
+
+# Garantir liberação da porta P2P local no firewall UFW
+if command -v ufw &>/dev/null; then
+    echo -e "🔓 ${CYAN}Garantindo liberação da porta P2P local ($LOCAL_P2P_PORT/tcp) no firewall UFW...${NC}"
+    sudo ufw allow "$LOCAL_P2P_PORT/tcp" 2>/dev/null || true
+fi
 
 # Gerar blockchain.conf com wallet.dat e seed em formato Base58
 CONF_FILE="$NODE_RUN_DIR/blockchain.conf"

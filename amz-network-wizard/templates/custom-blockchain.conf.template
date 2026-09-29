@@ -48,8 +48,10 @@ waves {
   network {
     bind-address = "0.0.0.0"
     port = __P2P_PORT__
+    declared-address = "__DECLARED_ADDRESS__"
     known-peers = []
     node-name = "__NODE_NAME__"
+    enable-peers-exchange = yes
     
     traffic-watcher {
       stop-sending-threshold = 100 MB

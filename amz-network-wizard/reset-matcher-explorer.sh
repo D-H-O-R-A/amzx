@@ -240,24 +240,30 @@ echo -e "✅ ${GREEN}matcher.conf updated and secured successfully!${NC}"
 # ------------------------------------------------------------------------------
 echo -e "\n${YELLOW}${BOLD}--- 🧹 STEP 5: CLEARING MATCHER & INDEXER DATABASES ---${NC}"
 
-# Reset Matcher database
-MATCHER_DATA_DIR="$RUN_DIR/matcher-data"
-if [ -d "$MATCHER_DATA_DIR" ]; then
-  echo -e "👉 Clearing Matcher LevelDB state and orderbooks in ${CYAN}$MATCHER_DATA_DIR${NC}..."
-  rm -rf "$MATCHER_DATA_DIR"/data 2>/dev/null || true
-  rm -f "$MATCHER_DATA_DIR"/lp-accounts.txt "$MATCHER_DATA_DIR"/*.txt 2>/dev/null || true
-  mkdir -p "$MATCHER_DATA_DIR"/data
-  touch "$MATCHER_DATA_DIR"/lp-accounts.txt
-fi
+read -p "Deseja realmente limpar os bancos de dados locais do Matcher e Explorer para reindexação total? [s/N]: " CONFIRM_WIPE
+CONFIRM_WIPE=${CONFIRM_WIPE:-N}
 
-# Reset FullExplorer SQLite Database (forces complete reindex from Block 1)
-if [ -n "$EXPLORER_DIR" ] && [ -d "$EXPLORER_DIR/var/db" ]; then
-  echo -e "👉 Clearing FullExplorer SQLite databases in ${CYAN}$EXPLORER_DIR/var/db${NC}..."
-  rm -rf "$EXPLORER_DIR/var/db"/* 2>/dev/null || true
-  echo -e "   FullExplorer will completely reindex all blocks from block height 1."
-fi
+if [[ "$CONFIRM_WIPE" =~ ^[Ss]$ ]]; then
+  # Reset Matcher database
+  MATCHER_DATA_DIR="$RUN_DIR/matcher-data"
+  if [ -d "$MATCHER_DATA_DIR" ]; then
+    echo -e "👉 Clearing Matcher LevelDB state and orderbooks in ${CYAN}$MATCHER_DATA_DIR${NC}..."
+    rm -rf "$MATCHER_DATA_DIR"/data 2>/dev/null || true
+    rm -f "$MATCHER_DATA_DIR"/lp-accounts.txt "$MATCHER_DATA_DIR"/*.txt 2>/dev/null || true
+    mkdir -p "$MATCHER_DATA_DIR"/data
+    touch "$MATCHER_DATA_DIR"/lp-accounts.txt
+  fi
 
-echo -e "✅ Databases cleared and prepared for clean reindexing."
+  # Reset FullExplorer SQLite Database (forces complete reindex from Block 1)
+  if [ -n "$EXPLORER_DIR" ] && [ -d "$EXPLORER_DIR/var/db" ]; then
+    echo -e "👉 Clearing FullExplorer SQLite databases in ${CYAN}$EXPLORER_DIR/var/db${NC}..."
+    rm -rf "$EXPLORER_DIR/var/db"/* 2>/dev/null || true
+    echo -e "   FullExplorer will completely reindex all blocks from block height 1."
+  fi
+  echo -e "✅ Databases cleared and prepared for clean reindexing."
+else
+  echo -e "🛡️  ${GREEN}Preservando bancos de dados existentes do Matcher e FullExplorer.${NC}"
+fi
 
 # ------------------------------------------------------------------------------
 # STEP 6: Start Services

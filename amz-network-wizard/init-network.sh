@@ -932,6 +932,16 @@ fi
 echo
 echo -e "${YELLOW}${BOLD}--- 📄 STEP 8: PROVISIONING CONFIGURATION FILES ---${NC}"
 
+# Obter IP público para declared-address P2P com confirmação do usuário
+AUTO_PUBLIC_IP=$(curl -s -4 -m 3 https://ifconfig.me 2>/dev/null || curl -s -4 -m 3 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+AUTO_PUBLIC_IP=${AUTO_PUBLIC_IP:-127.0.0.1}
+
+echo
+read -p "Digite o IP público desta VPS para conexões P2P da blockchain [default: $AUTO_PUBLIC_IP]: " MY_PUBLIC_IP
+MY_PUBLIC_IP=${MY_PUBLIC_IP:-$AUTO_PUBLIC_IP}
+echo -e "👉 ${GREEN}IP Público definido para P2P:${NC} ${BOLD}$MY_PUBLIC_IP${NC}"
+echo
+
 if [ "$REUSE_EXISTING_CONFIG" = true ]; then
   echo -e "ℹ️  ${CYAN}Reutilizando arquivos de configuração existentes. Atualizando parâmetros de mineração de nó único...${NC}"
   # Extrair a seed em base58 do arquivo existente
@@ -961,10 +971,12 @@ EOF
 
   if [ -n "$PRIVATE_KEY" ]; then
     echo -e "🛡️  ${GREEN}Chave privada Genesis recuperada com sucesso para mineração de nó único.${NC}"
-    BLOCKCHAIN_CONF_PATH="$BLOCKCHAIN_CONF_PATH" PRIVATE_KEY="$PRIVATE_KEY" python3 -c '
+    BLOCKCHAIN_CONF_PATH="$BLOCKCHAIN_CONF_PATH" PRIVATE_KEY="$PRIVATE_KEY" MY_PUBLIC_IP="$MY_PUBLIC_IP" P2P_PORT="$P2P_PORT" python3 -c '
 import os, re
 blockchain_conf = os.environ["BLOCKCHAIN_CONF_PATH"]
 private_key = os.environ["PRIVATE_KEY"]
+my_public_ip = os.environ.get("MY_PUBLIC_IP", "127.0.0.1")
+p2p_port = os.environ.get("P2P_PORT", "6868")
 
 with open(blockchain_conf, "r", encoding="utf-8") as f:
     content = f.read()
@@ -989,6 +1001,13 @@ else:
         if miner_block:
             target = miner_block.group(1)
             content = content.replace(target, target + f"\n    private-keys = [\"{private_key}\"]")
+
+# 3. Ensure declared-address and enable-peers-exchange in network block
+if "declared-address" not in content:
+    network_match = re.search(r"(network\s*\{[^}]+port\s*=[^\n]+)", content)
+    if network_match:
+        target = network_match.group(1)
+        content = content.replace(target, target + f"\n    declared-address = \"{my_public_ip}:{p2p_port}\"\n    enable-peers-exchange = yes")
 
 with open(blockchain_conf, "w", encoding="utf-8") as f:
     f.write(content)
@@ -1029,6 +1048,7 @@ EOF
     -e "s|__NODE_DATA_DIR__|$RUN_DIR/node-data|g" \
     -e "s|__CHAIN_ID__|$CHAIN_ID|g" \
     -e "s|__P2P_PORT__|$P2P_PORT|g" \
+    -e "s|__DECLARED_ADDRESS__|$MY_PUBLIC_IP:$P2P_PORT|g" \
     -e "s|__NODE_NAME__|amz-node-$CHAIN_ID|g" \
     -e "s|__WALLET_PASSWORD__|amzblockchainpassword123!|g" \
     -e "s|__SEED_BASE58__|$SEED_BASE58|g" \
@@ -1436,6 +1456,55 @@ sudo certbot --nginx \\
   -m $CERTBOT_EMAIL
 
 if [ \$? -eq 0 ]; then
+  # Garantir que data-service.$BASE_DOMAIN possui bloco SSL 443 dedicado no Nginx
+  CERT_DIR="/etc/letsencrypt/live/nodes.$BASE_DOMAIN"
+  if [ ! -d "\$CERT_DIR" ]; then
+    CERT_DIR=\$(find /etc/letsencrypt/live -name "fullchain.pem" 2>/dev/null | grep "$BASE_DOMAIN" | head -n 1 | xargs -r dirname)
+  fi
+
+  NGINX_TARGET="/etc/nginx/sites-available/nginx-amzx-$CHAIN_ID.conf"
+  if [ -n "\$CERT_DIR" ] && [ -f "\$CERT_DIR/fullchain.pem" ] && [ -f "\$NGINX_TARGET" ]; then
+    if ! grep -A 15 "server_name data-service.$BASE_DOMAIN;" "\$NGINX_TARGET" 2>/dev/null | grep -q "listen.*443.*ssl"; then
+      echo -e "\${CYAN}Configurando bloco HTTPS 443 explícito para data-service.$BASE_DOMAIN...\${NC}"
+      cat <<SSL_BLOCK | sudo tee -a "\$NGINX_TARGET" >/dev/null
+
+# 6b. AMZX Data Service HTTPS SSL Proxy
+server {
+    listen 443 ssl http2;
+    server_name data-service.$BASE_DOMAIN;
+
+    ssl_certificate \$CERT_DIR/fullchain.pem;
+    ssl_certificate_key \$CERT_DIR/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \\\$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \\\$host;
+        proxy_set_header X-Real-IP \\\$remote_addr;
+        proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \\\$scheme;
+    }
+}
+SSL_BLOCK
+      if sudo nginx -t; then
+        sudo systemctl reload nginx
+        echo -e "\${GREEN}Bloco HTTPS do data-service configurado e Nginx recarregado com sucesso!\${NC}"
+      fi
+    fi
+  fi
+
+  # Liberar portas no firewall UFW
+  if command -v ufw &>/dev/null; then
+    echo -e "🔓 \${CYAN}Liberando portas web e P2P ($P2P_PORT/tcp) no UFW...\${NC}"
+    sudo ufw allow 80/tcp 2>/dev/null || true
+    sudo ufw allow 443/tcp 2>/dev/null || true
+    sudo ufw allow "$P2P_PORT/tcp" 2>/dev/null || true
+  fi
+
   echo
   echo -e "\${GREEN}\${BOLD}==============================================================================\${NC}"
   echo -e "\${GREEN}\${BOLD}                🎉 SSL CERTIFICATES OBTAINED SUCCESSFULLY! 🎉                \${NC}"
@@ -1463,6 +1532,14 @@ check_port() {
     (echo >/dev/tcp/127.0.0.1/"$port") &>/dev/null 2>&1
   fi
 }
+
+# Ensure P2P port and web ports are allowed in UFW
+if command -v ufw &>/dev/null; then
+  echo -e "🔓 ${CYAN}Garantindo liberação da porta P2P ($P2P_PORT/tcp) no firewall UFW...${NC}"
+  sudo ufw allow "$P2P_PORT/tcp" 2>/dev/null || true
+  sudo ufw allow "80/tcp" 2>/dev/null || true
+  sudo ufw allow "443/tcp" 2>/dev/null || true
+fi
 
 # Clean stop existing processes on our target ports to avoid conflicts and allow fresh restart
 echo -e "${CYAN}Stopping pre-existing processes on ports $REST_API_PORT, $MATCHER_PORT, 3000...${NC}"
@@ -1554,6 +1631,7 @@ ELAPSED=0
 NODE_ONLINE=false
 MATCHER_ONLINE=false
 DATA_SERVICE_ONLINE=false
+P2P_ONLINE=false
 
 if [ "$NODE_ALREADY_RUNNING" = true ]; then
   NODE_ONLINE=true
@@ -1577,6 +1655,12 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
     fi
   fi
   
+  if [ "$P2P_ONLINE" = false ]; then
+    if check_port "$P2P_PORT"; then
+      P2P_ONLINE=true
+    fi
+  fi
+
   if [ "$MATCHER_ONLINE" = false ]; then
     if check_port "$MATCHER_PORT"; then
       MATCHER_ONLINE=true
@@ -1634,6 +1718,12 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
   # Print progress
   echo -n -e "\r⏳ Elapsed: ${ELAPSED}s / ${MAX_WAIT}s | Node: "
   if [ "$NODE_ONLINE" = true ]; then
+    echo -n -e "[${GREEN}ONLINE${NC}]"
+  else
+    echo -n -e "[${RED}OFFLINE${NC}]"
+  fi
+  echo -n -e " | P2P: "
+  if [ "$P2P_ONLINE" = true ]; then
     echo -n -e "[${GREEN}ONLINE${NC}]"
   else
     echo -n -e "[${RED}OFFLINE${NC}]"
