@@ -443,12 +443,31 @@ find ~/.cache/coursier/v1 ~/.ivy2/cache -name "*scalapb-runtime_3*.jar" -exec cp
 LOCAL_REST_PORT=6869
 LOCAL_P2P_PORT=6868
 
-# Se as portas padrão estiverem em uso no host, sugerir portas alternativas
-if ss -tulpn 2>/dev/null | grep -q ":6869 "; then
-    LOCAL_REST_PORT=6879
+# Se as portas padrão estiverem em uso no host, alertar o operador
+if ss -tulpn 2>/dev/null | grep -q ":$LOCAL_REST_PORT "; then
+    echo -e "⚠️  ${YELLOW}Detectado processo já escutando na porta REST $LOCAL_REST_PORT.${NC}"
+    read -p "Deseja parar o processo anterior para liberar a porta $LOCAL_REST_PORT? [S/n]: " KILL_OLD
+    KILL_OLD=${KILL_OLD:-S}
+    if [[ "$KILL_OLD" =~ ^[Ss]$ ]]; then
+        pkill -f "com.wavesplatform.Application" 2>/dev/null || true
+        sleep 1
+    else
+        read -p "Digite a porta alternativa para a REST API [default: 6879]: " ALT_REST
+        LOCAL_REST_PORT=${ALT_REST:-6879}
+    fi
 fi
-if ss -tulpn 2>/dev/null | grep -q ":6868 "; then
-    LOCAL_P2P_PORT=6878
+
+if ss -tulpn 2>/dev/null | grep -q ":$LOCAL_P2P_PORT "; then
+    echo -e "⚠️  ${YELLOW}Detectado processo já escutando na porta P2P $LOCAL_P2P_PORT.${NC}"
+    read -p "Deseja parar o processo anterior para liberar a porta $LOCAL_P2P_PORT? [S/n]: " KILL_OLD_P2P
+    KILL_OLD_P2P=${KILL_OLD_P2P:-S}
+    if [[ "$KILL_OLD_P2P" =~ ^[Ss]$ ]]; then
+        pkill -f "com.wavesplatform.Application" 2>/dev/null || true
+        sleep 1
+    else
+        read -p "Digite a porta alternativa para o P2P [default: 6878]: " ALT_P2P
+        LOCAL_P2P_PORT=${ALT_P2P:-6878}
+    fi
 fi
 
 MINER_ENABLED="no"
@@ -658,9 +677,20 @@ if [[ "$SETUP_DOMAIN" =~ ^[Ss]$ ]]; then
             sudo apt-get update && sudo apt-get install -y certbot python3-certbot-nginx
         fi
 
+        # Determinar porta REST ativa
+        TARGET_REST_PORT="$LOCAL_REST_PORT"
+        if ss -tulpn 2>/dev/null | grep -q ":6869 "; then
+            TARGET_REST_PORT=6869
+        elif [ -f "$CONF_FILE" ]; then
+            PARSED_PORT=$(grep -A 5 "rest-api {" "$CONF_FILE" 2>/dev/null | grep -oE "port\s*=\s*[0-9]+" | awk '{print $3}')
+            if [ -n "$PARSED_PORT" ]; then
+                TARGET_REST_PORT="$PARSED_PORT"
+            fi
+        fi
+
         # Criar arquivo de configuração do Nginx
         NGINX_CONF="/etc/nginx/sites-available/node-$NODE_DOMAIN.conf"
-        echo -e "${CYAN}Criando configuração do Nginx em $NGINX_CONF...${NC}"
+        echo -e "${CYAN}Criando configuração do Nginx em $NGINX_CONF (proxy na porta $TARGET_REST_PORT)...${NC}"
         
         sudo tee "$NGINX_CONF" > /dev/null << EOF
 server {
@@ -668,7 +698,7 @@ server {
     server_name $NODE_DOMAIN;
 
     location / {
-        proxy_pass http://127.0.0.1:$LOCAL_REST_PORT;
+        proxy_pass http://127.0.0.1:$TARGET_REST_PORT;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
