@@ -334,6 +334,73 @@ class EthRpcRouteSpec extends RouteSpec("/eth") with WithDomain with EthHelpers 
       .~>(check { responseAs[JsObject] shouldBe Json.obj() })
   }
 
+  "batch requests" in withDomain() { d =>
+    Post(
+      routePath(""),
+      Json.arr(
+        Json.obj("method" -> "eth_blockNumber", "id" -> 1),
+        Json.obj("method" -> "eth_chainId", "id" -> 2),
+        Json.obj("method" -> "eth_syncing", "id" -> 3)
+      )
+    ).~>(new EthRpcRoute(d.blockchain, d.commonApi.transactions, ntpTime).route) ~> check {
+      val arr = responseAs[JsArray]
+      arr.value.length shouldBe 3
+      (arr.value(0) \ "id").as[Int] shouldBe 1
+      (arr.value(1) \ "id").as[Int] shouldBe 2
+      (arr.value(2) \ "result").as[Boolean] shouldBe false
+    }
+  }
+
+  "EIP-1559 fee methods" in withDomain() { d =>
+    routeTest(d, "eth_maxPriorityFeePerGas")(result shouldBe "0x3b9aca00")
+    routeTest(d, "eth_feeHistory", "0x4", "latest", Json.arr()) {
+      (resultJson \ "baseFeePerGas").as[JsArray].value.nonEmpty shouldBe true
+      (resultJson \ "gasUsedRatio").as[JsArray].value.nonEmpty shouldBe true
+    }
+  }
+
+  "standard Web3 methods" in withDomain() { d =>
+    routeTest(d, "eth_syncing")((responseAs[JsObject] \ "result").as[Boolean] shouldBe false)
+    routeTest(d, "eth_accounts")((responseAs[JsObject] \ "result").as[JsArray] shouldBe Json.arr())
+    routeTest(d, "web3_clientVersion")(result should startWith("AMZX/v"))
+    routeTest(d, "net_listening")((responseAs[JsObject] \ "result").as[Boolean] shouldBe true)
+    routeTest(d, "net_peerCount")(result shouldBe "0x1")
+  }
+
+  "full block details" in withDomain() { d =>
+    d.appendBlock()
+    routeTest(d, "eth_getBlockByNumber", "latest") {
+      (resultJson \ "number").as[String] shouldBe "0x1"
+      (resultJson \ "hash").as[String] should startWith("0x")
+      (resultJson \ "parentHash").as[String] should startWith("0x")
+      (resultJson \ "gasLimit").as[String] shouldBe "0x1c9c380"
+      (resultJson \ "baseFeePerGas").as[String] shouldBe "0x0"
+      (resultJson \ "transactions").as[JsArray] shouldBe Json.arr()
+    }
+  }
+
+  "ERC-20 full token metadata" in withDomain() { d =>
+    val randomKP = randomKeyPair()
+    val issueTx  = TxHelpers.issue(randomKP, 100000000, 8, "AMZCOIN", "amz test coin", 1.waves, version = TxVersion.V2)
+    d.appendBlock(
+      GenesisTransaction.create(randomKP.toAddress, 5.waves, ntpTime.correctedTime()).explicitGet(),
+      issueTx
+    )
+    val tokenAddr = EthEncoding.toHexString(issueTx.id().arr.take(20))
+    // name() = 0x06fdde03
+    routeTest(d, "eth_call", Json.obj("to" -> tokenAddr, "data" -> "0x06fdde03")) {
+      result should endWith("414d5a434f494e" + "00" * 25)
+    }
+    // totalSupply() = 0x18160ddd
+    routeTest(d, "eth_call", Json.obj("to" -> tokenAddr, "data" -> "0x18160ddd")) {
+      resultInt shouldBe 100000000
+    }
+    // allowance() = 0xdd62ed3e
+    routeTest(d, "eth_call", Json.obj("to" -> tokenAddr, "data" -> "0xdd62ed3e")) {
+      result should startWith("0x")
+    }
+  }
+
   def resultJson: JsObject = (responseAs[JsObject] \ "result").as[JsObject]
   def result: String       = (responseAs[JsObject] \ "result").as[String]
   def resultInt: Long      = java.lang.Long.valueOf((responseAs[JsObject] \ "result").as[String].drop(2), 16)
