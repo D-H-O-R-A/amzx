@@ -15,10 +15,7 @@ concurrency:
 
 jobs:
   create-aptly-repo:
-    if: github.repository == 'wavesplatform/Waves' || (secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_KEY_ID != '')
-    environment:
-      name: aptly-repo
-      url: https://apt.wavesplatform.com
+    if: secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_KEY_ID != ''
     env:
       APTLY_VERSION: 1.6.2
     runs-on: ubuntu-latest

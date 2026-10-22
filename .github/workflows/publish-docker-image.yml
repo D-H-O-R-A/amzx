@@ -24,9 +24,9 @@ on:
         type: string
     secrets:
       DOCKERHUB_USER:
-        required: true
+        required: false
       DOCKERHUB_PASSWORD:
-        required: true
+        required: false
     outputs:
       digest:
         value: ${{ jobs.publish.outputs.digest }}

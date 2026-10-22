@@ -12,7 +12,7 @@ jobs:
       raw-docker-tags: |
         type=match,pattern=v(.*),group=1
         type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
-      environment: ${{ secrets.DOCKERHUB_USER != '' && 'Docker Hub' || '' }}
+      environment: ''
     permissions:
       contents: read
       packages: write
@@ -24,7 +24,6 @@ jobs:
 
   push-private-node-image:
     name: Publish Private Node to Docker Hub
-    environment: Docker Hub
     needs: publish-node-image
     if: secrets.DOCKERHUB_USER != '' && secrets.DOCKERHUB_PASSWORD != ''
     runs-on: ubuntu-latest
@@ -55,7 +54,6 @@ jobs:
 
   publish-ride-runner-image:
     name: Publish RIDE Runner to Docker Hub
-    environment: Docker Hub
     if: secrets.DOCKERHUB_USER != '' && secrets.DOCKERHUB_PASSWORD != ''
     runs-on: ubuntu-latest
     steps:
@@ -88,7 +86,6 @@ jobs:
           tags: ${{ steps.meta-ride-runner.outputs.tags }}
 
   publish-release-jars:
-    environment: prod
     name: Publish JARs to Sonatype
     runs-on: ubuntu-latest
     if: github.event_name == 'release' && (github.repository == 'wavesplatform/Waves' || secrets.OSSRH_USERNAME != '')

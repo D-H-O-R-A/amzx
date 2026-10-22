@@ -20,10 +20,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: github.repository == 'wavesplatform/Waves' || secrets.NPM_TOKEN != ''
-    environment:
-      name: NPMJS
-      url: ${{ steps.publish.outputs.url }}
+    if: (github.repository == 'wavesplatform/Waves' || secrets.NPM_TOKEN != '') && secrets.NPM_TOKEN != ''
     permissions:
       contents: read
       attestations: write
