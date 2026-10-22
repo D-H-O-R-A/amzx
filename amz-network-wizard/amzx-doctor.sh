@@ -132,20 +132,28 @@ fi
 echo
 
 # ------------------------------------------------------------------------------
-# 3. DIAGNÓSTICO E AUTO-CURA DO NÓ BLOCKCHAIN (Porta 6869)
+# 3. DIAGNÓSTICO E AUTO-CURA DO NÓ BLOCKCHAIN
 # ------------------------------------------------------------------------------
-echo -e "🔷 ${CYAN}${BOLD}[3/5] Nó Blockchain AMZX (REST API / P2P / Mineração)${NC}"
+REST_PORT=6869
+if [ -n "$RUN_DIR" ] && [ -f "$RUN_DIR/blockchain.conf" ]; then
+    PARSED_REST=$(grep -A 6 "rest-api {" "$RUN_DIR/blockchain.conf" 2>/dev/null | grep -oE "port\s*=\s*[0-9]+" | awk '{print $3}' | head -n 1)
+    if [ -n "$PARSED_REST" ]; then
+        REST_PORT="$PARSED_REST"
+    fi
+fi
+
+echo -e "🔷 ${CYAN}${BOLD}[3/5] Nó Blockchain AMZX (REST API: $REST_PORT / P2P / Mineração)${NC}"
 
 NODE_ONLINE=false
-if ss -tulpn 2>/dev/null | grep -q ":6869 " || curl -s -m 2 http://127.0.0.1:6869/node/version &>/dev/null; then
+if ss -tulpn 2>/dev/null | grep -q ":$REST_PORT " || curl -s -m 2 http://127.0.0.1:$REST_PORT/node/version &>/dev/null; then
     NODE_ONLINE=true
-    HEIGHT=$(curl -s -m 2 http://127.0.0.1:6869/blocks/height 2>/dev/null | grep -o '"height":[0-9]*' | cut -d':' -f2 || echo "Ativo")
-    VERSION=$(curl -s -m 2 http://127.0.0.1:6869/node/version 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4 || echo "AMZX 1.6")
-    echo -e "  - Status do Nó:      🟢 ${GREEN}${BOLD}ONLINE (Porta 6869)${NC}"
+    HEIGHT=$(curl -s -m 2 http://127.0.0.1:$REST_PORT/blocks/height 2>/dev/null | grep -o '"height":[0-9]*' | cut -d':' -f2 || echo "Ativo")
+    VERSION=$(curl -s -m 2 http://127.0.0.1:$REST_PORT/node/version 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4 || echo "AMZX 1.6")
+    echo -e "  - Status do Nó:      🟢 ${GREEN}${BOLD}ONLINE (Porta $REST_PORT)${NC}"
     echo -e "  - Altura Atual:      🧱 ${CYAN}Bloco $HEIGHT${NC}"
     echo -e "  - Versão do Nó:      📦 ${CYAN}$VERSION${NC}"
 else
-    echo -e "  - Status do Nó:      🔴 ${RED}${BOLD}OFFLINE (Porta 6869 fechada)${NC}"
+    echo -e "  - Status do Nó:      🔴 ${RED}${BOLD}OFFLINE (Porta $REST_PORT fechada)${NC}"
     if command -v systemctl &>/dev/null && systemctl list-unit-files 2>/dev/null | grep -q "amzx-node"; then
         echo -e "  🔄 ${CYAN}Reiniciando Nó Blockchain via systemd (preservando banco de dados)...${NC}"
         sudo systemctl restart amzx-node 2>/dev/null || true
@@ -179,7 +187,7 @@ if [ -n "$RUN_DIR" ] && [ -f "$RUN_DIR/blockchain.conf" ]; then
 fi
 
 if ss -tulpn 2>/dev/null | grep -E "(0\.0\.0\.0|\*):$P2P_PORT "; then
-    PEER_COUNT=$(curl -s -m 2 http://127.0.0.1:6869/peers/connected 2>/dev/null | grep -o '"address"' | wc -l || echo "0")
+    PEER_COUNT=$(curl -s -m 2 http://127.0.0.1:$REST_PORT/peers/connected 2>/dev/null | grep -o '"address"' | wc -l || echo "0")
     echo -e "  - Porta P2P ($P2P_PORT):    🟢 ${GREEN}${BOLD}ONLINE (Escutando conexões externas em 0.0.0.0)${NC}"
     echo -e "  - Peers Conectados:  🤝 ${CYAN}$PEER_COUNT peers ativos${NC}"
 elif ss -tulpn 2>/dev/null | grep -q "127\.0\.0\.1:$P2P_PORT "; then
