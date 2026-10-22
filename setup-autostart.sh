@@ -167,6 +167,57 @@ EOF"
     SERVICES_TO_ENABLE+=("amzx-data-service")
 fi
 
+# 5.1 Configurar FullExplorer se existir instalação no sistema
+EXPLORER_DIR=""
+for cand in "/var/www/fullexplorer" "$SCRIPT_DIR/planetone/explorer" "$HOME_DIR/planetone/explorer"; do
+    if [ -d "$cand" ] && [ -f "$cand/updater.sh" ]; then
+        EXPLORER_DIR="$cand"
+        break
+    fi
+done
+
+if [ -n "$EXPLORER_DIR" ]; then
+    echo -e "⚙️  ${CYAN}Configurando serviço systemd: ${BOLD}fullexplorer.service${NC}..."
+    $SUDO_CMD bash -c "cat <<EOF > /etc/systemd/system/fullexplorer.service
+[Unit]
+Description=AMZX FullExplorer Indexer & Web
+After=network.target amzx-node.service
+Wants=amzx-node.service
+
+[Service]
+Type=simple
+User=$SYSTEM_USER
+WorkingDirectory=$EXPLORER_DIR
+ExecStart=/usr/bin/env bash $EXPLORER_DIR/updater.sh
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF"
+    SERVICES_TO_ENABLE+=("fullexplorer")
+fi
+
+# 5.2 Habilitar PostgreSQL se estiver instalado como serviço no sistema
+if systemctl list-unit-files 2>/dev/null | grep -q "postgresql"; then
+    echo -e "⚙️  ${CYAN}Habilitando inicialização automática do ${BOLD}PostgreSQL${NC} no boot..."
+    $SUDO_CMD systemctl enable postgresql 2>/dev/null || true
+    SERVICES_TO_ENABLE+=("postgresql")
+fi
+
+# 5.3 Habilitar Nginx se estiver instalado
+if systemctl list-unit-files 2>/dev/null | grep -q "nginx"; then
+    echo -e "⚙️  ${CYAN}Habilitando inicialização automática do ${BOLD}Nginx (Reverse Proxy/SSL)${NC} no boot..."
+    $SUDO_CMD systemctl enable nginx 2>/dev/null || true
+    SERVICES_TO_ENABLE+=("nginx")
+fi
+
+# 5.4 Habilitar Docker Daemon se instalado (para contêineres persistentes)
+if command -v docker &>/dev/null && systemctl list-unit-files 2>/dev/null | grep -q "docker"; then
+    $SUDO_CMD systemctl enable docker 2>/dev/null || true
+fi
+
 # 6. Recarregar o daemon do systemd e habilitar no boot
 echo
 echo -e "🔄 ${YELLOW}Recarregando daemon systemd e ativando serviços no boot do VPS...${NC}"
