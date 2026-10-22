@@ -564,7 +564,7 @@ waves {
   miner {
     enable = $MINER_ENABLED
     quorum = 1
-    interval-after-last-block-then-generation-is-allowed = 120h
+    interval-after-last-block-then-generation-is-allowed = 999999d
     micro-block-interval = 5s
     minimal-generation-offset = 0s
     private-keys = ["$PRIVATE_KEY"]
