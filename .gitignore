@@ -39,6 +39,7 @@ docker/temp
 package
 !src/package
 !ride-runner/src/package
+!node/src/package
 native
 
 # Node & tools

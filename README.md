@@ -133,6 +133,23 @@ cd amz-network-wizard
 
 ---
 
+## 🔄 Guia de Atualização de Versão (Sem Perda de Dados)
+
+Se você já possui um nó ou validador em execução e deseja atualizar o software do AMZX para uma nova versão sem perder o histórico de blocos, saldo ou dados:
+
+Consulte o nosso guia completo passo a passo:
+👉 **[📘 Manual de Atualização do AMZX Node & Validadores](./MANUAL_ATUALIZACAO_NODE.md)**
+
+O manual abrange:
+- **Preservação de Dados:** Garantia de persistência total do banco de dados (LevelDB / RocksDB) em `data/`.
+- **Nó via Script / Nohup:** Como parar graciosa e seguramente, substituir o JAR e reiniciar continuando no mesmo bloco.
+- **Instalação via Pacote Debian / Ubuntu (`.deb` / APT):** Atualização via comando `dpkg` sem sobrescrever `/var/lib/waves/data`.
+- **Ambientes Docker:** Atualização de imagem com mapeamento de volumes persistentes.
+- **Execução em Windows & macOS:** Como atualizar o binário no notebook/PC sem afetar sua pasta de dados.
+- **Estratégia Rolling Update:** Passo a passo para atualizar redes de múltiplos validadores com zero downtime.
+
+---
+
 ## 🦊 Web3, MetaMask & EVM JSON-RPC Layer (HTTP & WSS)
 
 AMZX features a high-performance EVM compatibility proxy layer allowing **MetaMask**, **Trust Wallet**, **SafePal**, **Web3.js**, **Ethers.js**, and dApps to interact directly with the AMZX blockchain over HTTP and WebSocket (`ws://` / `wss://`).
