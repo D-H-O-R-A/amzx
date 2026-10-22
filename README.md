@@ -156,6 +156,22 @@ AMZX features a high-performance EVM compatibility proxy layer allowing **MetaMa
 
 ---
 
+## 🗺️ Roadmap & Inovações Futuras (Upcoming Features)
+
+O ecossistema AMZX está em constante evolução tecnológica, combinando o melhor da solidez e descentralização com a experiência fluida dos maiores ecossistemas do mercado:
+
+- **🔌 Retrocompatibilidade Web3.js & Conexão MetaMask Nativa (Já Disponível):**
+  - Conexão direta e sem fricção com MetaMask, Trust Wallet, SafePal, Ethers.js e Web3.js.
+  - Suporte completo a HTTP e WebSocket (`ws://` / `wss://`), taxas EIP-1559, chamadas em lote (batching), tokens ERC-20, detecção nativa de NFTs ERC-721 e leitura de storage.
+
+- **🕵️ Transações com Privacidade Estilo Monero / Zcash (Em Breve):**
+  - Implementação de transações blindadas (Shielded Transactions) com provas de conhecimento zero (ZK-SNARKs / Bulletproofs), assinaturas em anel (Ring Signatures) e endereços furtivos (Stealth Addresses), garantindo anonimato opcional e confidencialidade absoluta para saldos e transferências.
+
+- **⚡ Layer 2 (L2) Ultra Veloz Estilo Solana (Em Breve):**
+  - Desenvolvimento de uma camada L2 dedicada para processamento de dezenas de milhares de transações por segundo (TPS), com finalidade sub-segundo e taxas insignificantes, ideal para microtransações, dApps de alta frequência, GameFi e pagamentos instantâneos.
+
+---
+
 ## 👨‍💻 Developer & Support Contacts
 
 For inquiries, support, integration consulting, or commercial collaborations, reach out to the project developer:
