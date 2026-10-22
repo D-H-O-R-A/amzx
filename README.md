@@ -142,6 +142,7 @@ Consulte o nosso guia completo passo a passo:
 
 O manual abrange:
 - **Preservação de Dados:** Garantia de persistência total do banco de dados (LevelDB / RocksDB) em `data/`.
+- **Proteção Contra Reboot de VPS (Hostinger / Cloud):** Inicialização automática em segundo plano via systemd com `./setup-autostart.sh` (com `Restart=always`).
 - **Nó via Script / Nohup:** Como parar graciosa e seguramente, substituir o JAR e reiniciar continuando no mesmo bloco.
 - **Instalação via Pacote Debian / Ubuntu (`.deb` / APT):** Atualização via comando `dpkg` sem sobrescrever `/var/lib/waves/data`.
 - **Ambientes Docker:** Atualização de imagem com mapeamento de volumes persistentes.

@@ -1194,6 +1194,90 @@ echo -e " - Matcher launch:      ${CYAN}$START_MATCHER_SCRIPT${NC}"
 echo -e " - Data Service launch: ${CYAN}$START_DATA_SERVICE_SCRIPT${NC}"
 
 # ------------------------------------------------------------------------------
+# STEP 9.0: SYSTEMD AUTOSTART & RESILIENCE PROVISIONING (VPS REBOOT RECOVERY)
+# ------------------------------------------------------------------------------
+SUDO_CMD=""
+[ "$EUID" -ne 0 ] && SUDO_CMD="sudo"
+SYSTEM_USER="${SUDO_USER:-$USER}"
+
+if command -v systemctl &>/dev/null && ([ "$EUID" -eq 0 ] || $SUDO_CMD -n true 2>/dev/null || command -v sudo &>/dev/null); then
+  echo
+  echo -e "⚙️  ${YELLOW}${BOLD}--- 🛡️ STEP 9.0: CONFIGURANDO SYSTEMD (REINÍCIO AUTOMÁTICO NO BOOT DO VPS) ---${NC}"
+  
+  $SUDO_CMD bash -c "cat <<EOF > /etc/systemd/system/amzx-node.service
+[Unit]
+Description=AMZX Blockchain Node
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$SYSTEM_USER
+WorkingDirectory=$RUN_DIR
+ExecStart=/usr/bin/env bash $START_NODE_SCRIPT
+Restart=always
+RestartSec=5s
+SuccessExitStatus=143
+LimitNOFILE=65536
+StandardOutput=append:$RUN_DIR/node.log
+StandardError=append:$RUN_DIR/node.log
+
+[Install]
+WantedBy=multi-user.target
+EOF"
+
+  $SUDO_CMD bash -c "cat <<EOF > /etc/systemd/system/amzx-matcher.service
+[Unit]
+Description=AMZX Matcher DEX
+After=network.target amzx-node.service
+Wants=amzx-node.service
+
+[Service]
+Type=simple
+User=$SYSTEM_USER
+WorkingDirectory=$RUN_DIR
+ExecStart=/usr/bin/env bash $START_MATCHER_SCRIPT
+Restart=always
+RestartSec=5s
+SuccessExitStatus=143
+LimitNOFILE=65536
+StandardOutput=append:$RUN_DIR/matcher.log
+StandardError=append:$RUN_DIR/matcher.log
+
+[Install]
+WantedBy=multi-user.target
+EOF"
+
+  $SUDO_CMD bash -c "cat <<EOF > /etc/systemd/system/amzx-data-service.service
+[Unit]
+Description=AMZX Data Service & PostgreSQL Sync
+After=network.target amzx-node.service
+Wants=amzx-node.service
+
+[Service]
+Type=simple
+User=$SYSTEM_USER
+WorkingDirectory=$RUN_DIR
+ExecStart=/usr/bin/env bash $START_DATA_SERVICE_SCRIPT
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+StandardOutput=append:$RUN_DIR/data-service.log
+StandardError=append:$RUN_DIR/data-service.log
+
+[Install]
+WantedBy=multi-user.target
+EOF"
+
+  $SUDO_CMD systemctl daemon-reload
+  $SUDO_CMD systemctl enable amzx-node amzx-matcher amzx-data-service 2>/dev/null || true
+  echo -e "  ✅ ${GREEN}Serviços systemd ativados no boot: amzx-node, amzx-matcher, amzx-data-service${NC}"
+  SYSTEMD_CONFIGURED=true
+else
+  SYSTEMD_CONFIGURED=false
+fi
+
+# ------------------------------------------------------------------------------
 # STEP 9.1: AUTOMATED DOCKER SETUP SYNCHRONIZATION
 # ------------------------------------------------------------------------------
 DOCKER_SETUP_DIR="$PROJECT_ROOT/amzx-docker"
@@ -1617,16 +1701,28 @@ fi
 if [ "$NODE_ALREADY_RUNNING" = false ]; then
   echo
   echo -e "📡 ${CYAN}Starting AMZX Private Node in the background...${NC}"
-  nohup "$START_NODE_SCRIPT" < /dev/null > "$RUN_DIR/node.log" 2>&1 &
-  NODE_PID=$!
-  echo -e "👉 Node started with PID ${BOLD}$NODE_PID${NC}. Log file: ${BLUE}$RUN_DIR/node.log${NC}"
+  if [ "${SYSTEMD_CONFIGURED:-false}" = true ]; then
+    $SUDO_CMD systemctl restart amzx-node 2>/dev/null || nohup "$START_NODE_SCRIPT" < /dev/null > "$RUN_DIR/node.log" 2>&1 &
+    NODE_PID=$(pgrep -f "com.wavesplatform.Application" | tail -n 1 || echo "systemd")
+    echo -e "👉 Node started via ${GREEN}systemd${NC} (PID: ${BOLD}$NODE_PID${NC}). Log file: ${BLUE}$RUN_DIR/node.log${NC}"
+  else
+    nohup "$START_NODE_SCRIPT" < /dev/null > "$RUN_DIR/node.log" 2>&1 &
+    NODE_PID=$!
+    echo -e "👉 Node started with PID ${BOLD}$NODE_PID${NC}. Log file: ${BLUE}$RUN_DIR/node.log${NC}"
+  fi
 fi
 
 if [ "$MATCHER_ALREADY_RUNNING" = false ]; then
   echo -e "📡 ${CYAN}Starting AMZX Matcher DEX in the background...${NC}"
-  nohup "$START_MATCHER_SCRIPT" < /dev/null > "$RUN_DIR/matcher.log" 2>&1 &
-  MATCHER_PID=$!
-  echo -e "👉 Matcher started with PID ${BOLD}$MATCHER_PID${NC}. Log file: ${BLUE}$RUN_DIR/matcher.log${NC}"
+  if [ "${SYSTEMD_CONFIGURED:-false}" = true ]; then
+    $SUDO_CMD systemctl restart amzx-matcher 2>/dev/null || nohup "$START_MATCHER_SCRIPT" < /dev/null > "$RUN_DIR/matcher.log" 2>&1 &
+    MATCHER_PID=$(pgrep -f "com.wavesplatform.dex" | tail -n 1 || echo "systemd")
+    echo -e "👉 Matcher started via ${GREEN}systemd${NC} (PID: ${BOLD}$MATCHER_PID${NC}). Log file: ${BLUE}$RUN_DIR/matcher.log${NC}"
+  else
+    nohup "$START_MATCHER_SCRIPT" < /dev/null > "$RUN_DIR/matcher.log" 2>&1 &
+    MATCHER_PID=$!
+    echo -e "👉 Matcher started with PID ${BOLD}$MATCHER_PID${NC}. Log file: ${BLUE}$RUN_DIR/matcher.log${NC}"
+  fi
 fi
 
 DATA_SERVICE_ALREADY_RUNNING=false
@@ -1637,9 +1733,15 @@ fi
 
 if [ "$DATA_SERVICE_ALREADY_RUNNING" = false ]; then
   echo -e "📡 ${CYAN}Starting AMZX Data Service indexer in the background...${NC}"
-  nohup "$START_DATA_SERVICE_SCRIPT" < /dev/null > "$RUN_DIR/data-service.log" 2>&1 &
-  DATA_SERVICE_PID=$!
-  echo -e "👉 Data Service started with PID ${BOLD}$DATA_SERVICE_PID${NC}. Log file: ${BLUE}$RUN_DIR/data-service.log${NC}"
+  if [ "${SYSTEMD_CONFIGURED:-false}" = true ]; then
+    $SUDO_CMD systemctl restart amzx-data-service 2>/dev/null || nohup "$START_DATA_SERVICE_SCRIPT" < /dev/null > "$RUN_DIR/data-service.log" 2>&1 &
+    DATA_SERVICE_PID=$(pgrep -f "start-data-service.sh" | tail -n 1 || echo "systemd")
+    echo -e "👉 Data Service started via ${GREEN}systemd${NC} (PID: ${BOLD}$DATA_SERVICE_PID${NC}). Log file: ${BLUE}$RUN_DIR/data-service.log${NC}"
+  else
+    nohup "$START_DATA_SERVICE_SCRIPT" < /dev/null > "$RUN_DIR/data-service.log" 2>&1 &
+    DATA_SERVICE_PID=$!
+    echo -e "👉 Data Service started with PID ${BOLD}$DATA_SERVICE_PID${NC}. Log file: ${BLUE}$RUN_DIR/data-service.log${NC}"
+  fi
 fi
 
 # Polling loop for active verification

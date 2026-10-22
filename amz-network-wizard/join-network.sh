@@ -627,6 +627,44 @@ echo -e "  - Script de Start:   🚀 ${GREEN}$NODE_RUN_DIR/start-node.sh${NC}"
 echo
 
 # ------------------------------------------------------------------------------
+# STEP 6.1: CONFIGURAR INICIALIZAÇÃO NO SYSTEMD (PERSISTÊNCIA CONTRA REBOOT DO VPS)
+# ------------------------------------------------------------------------------
+SUDO_CMD=""
+[ "$EUID" -ne 0 ] && SUDO_CMD="sudo"
+SYSTEM_USER="${SUDO_USER:-$USER}"
+
+SYSTEMD_ACTIVE=false
+if command -v systemctl &>/dev/null && ([ "$EUID" -eq 0 ] || $SUDO_CMD -n true 2>/dev/null || command -v sudo &>/dev/null); then
+    echo -e "⚙️  ${CYAN}Configurando serviço systemd para reinício automático no boot do VPS...${NC}"
+    $SUDO_CMD bash -c "cat <<EOF > /etc/systemd/system/amzx-node.service
+[Unit]
+Description=AMZX Blockchain Node (Validator / Peer)
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$SYSTEM_USER
+WorkingDirectory=$NODE_RUN_DIR
+ExecStart=/usr/bin/env bash $NODE_RUN_DIR/start-node.sh
+Restart=always
+RestartSec=5s
+SuccessExitStatus=143
+LimitNOFILE=65536
+StandardOutput=append:$NODE_RUN_DIR/node.log
+StandardError=append:$NODE_RUN_DIR/node.log
+
+[Install]
+WantedBy=multi-user.target
+EOF"
+    $SUDO_CMD systemctl daemon-reload
+    $SUDO_CMD systemctl enable amzx-node 2>/dev/null || true
+    echo -e "  ✅ ${GREEN}Serviço amzx-node ativado no systemd (protegido contra reinicialização do VPS).${NC}"
+    SYSTEMD_ACTIVE=true
+fi
+echo
+
+# ------------------------------------------------------------------------------
 # STEP 7: INICIALIZAÇÃO DO NÓ
 # ------------------------------------------------------------------------------
 echo -e "🔷 ${CYAN}${BOLD}[7/8] Inicialização da Sincronização${NC}"
@@ -636,18 +674,30 @@ START_NOW=${START_NOW:-S}
 
 if [[ "$START_NOW" =~ ^[Ss]$ ]]; then
     cd "$NODE_RUN_DIR"
-    nohup ./start-node.sh < /dev/null > node.log 2>&1 &
-    NODE_PID=$!
-    echo -e "✅ ${GREEN}${BOLD}Nó iniciado com sucesso em segundo plano! (PID: $NODE_PID)${NC}"
+    if [ "$SYSTEMD_ACTIVE" = true ]; then
+        $SUDO_CMD systemctl restart amzx-node
+        echo -e "✅ ${GREEN}${BOLD}Nó iniciado com sucesso via systemd (autostart ativo)!${NC}"
+    else
+        nohup ./start-node.sh < /dev/null > node.log 2>&1 &
+        NODE_PID=$!
+        echo -e "✅ ${GREEN}${BOLD}Nó iniciado com sucesso em segundo plano! (PID: $NODE_PID)${NC}"
+    fi
     echo
     echo -e "Para acompanhar os logs em tempo real:"
     echo -e "  👉 ${CYAN}tail -f $NODE_RUN_DIR/node.log${NC}"
+    if [ "$SYSTEMD_ACTIVE" = true ]; then
+        echo -e "  👉 ${CYAN}sudo journalctl -u amzx-node -f${NC}"
+    fi
     echo
     echo -e "Para consultar a altura sincronizada localmente:"
     echo -e "  👉 ${CYAN}curl http://127.0.0.1:$LOCAL_REST_PORT/blocks/height${NC}"
 else
     echo -e "Para iniciar o nó manualmente mais tarde, execute:"
-    echo -e "  👉 ${CYAN}cd $NODE_RUN_DIR && nohup ./start-node.sh < /dev/null > node.log 2>&1 &${NC}"
+    if [ "$SYSTEMD_ACTIVE" = true ]; then
+        echo -e "  👉 ${CYAN}sudo systemctl start amzx-node${NC}"
+    else
+        echo -e "  👉 ${CYAN}cd $NODE_RUN_DIR && nohup ./start-node.sh < /dev/null > node.log 2>&1 &${NC}"
+    fi
 fi
 echo
 

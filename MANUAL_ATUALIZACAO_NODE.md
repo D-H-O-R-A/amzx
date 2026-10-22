@@ -20,6 +20,7 @@ Quando o nó é encerrado de forma correta e reiniciado com o novo executável, 
 
 ## 🎯 Escolha o Seu Cenário de Instalação
 
+- [🛡️ Proteção Contra Reinicialização do VPS (Hostinger / Cloud com systemd)](#️-proteção-contra-reinicializações-do-vps-hostinger--cloud-autostart)
 - [Cenário 1: Nó rodando via Script / Nohup (VPS ou Linux)](#-cenário-1-nó-rodando-via-script--nohup-linux--vps)
 - [Cenário 2: Nó instalado via Pacote Debian / Ubuntu (.deb / APT)](#-cenário-2-nó-instalado-via-pacote-debian--ubuntu-deb--apt)
 - [Cenário 3: Nó rodando em Contêiner Docker](#-cenário-3-nó-rodando-em-contêiner-docker)
@@ -27,6 +28,27 @@ Quando o nó é encerrado de forma correta e reiniciado com o novo executável, 
 - [Cenário 5: Nó rodando no macOS](#-cenário-5-nó-rodando-no-macos)
 - [Estratégia Rolling Update para Validadores (Multi-Nós)](#-estratégia-rolling-update-para-redes-com-vários-nós)
 - [Diagnóstico e Verificação Pós-Atualização](#-checklist-de-verificação-pós-atualização)
+
+---
+
+## 🛡️ Proteção Contra Reinicializações do VPS (Hostinger / Cloud Autostart)
+
+Em provedores de VPS como a **Hostinger**, **DigitalOcean** ou **AWS**, os servidores virtuais podem reiniciar periodicamente para manutenção de host ou após quedas de energia.
+
+Se você estiver rodando os processos via `nohup` simples em segundo plano, **o processo morre quando o servidor reinicia e não volta sozinho**.
+
+Para resolver isso de forma definitiva, disponibilizamos o script automatizador de resiliência:
+
+```bash
+# Executar a partir da raiz do repositório:
+./setup-autostart.sh
+```
+
+### O que o `setup-autostart.sh` faz:
+1. **Detecta Automaticamente** a pasta do seu nó, arquivos `start-node.sh`, `start-matcher.sh` e `start-data-service.sh`.
+2. **Cria os Serviços do Sistema Operacional** em `/etc/systemd/system/` (`amzx-node.service`, `amzx-matcher.service`, `amzx-data-service.service`).
+3. **Ativa Reinício Automático Permanente (`Restart=always` e `RestartSec=5s`):** Se o processo cair ou sofrer OOM (falta de RAM), o próprio kernel do Linux o reinicia em 5 segundos.
+4. **Habilita no Boot (`systemctl enable`):** Toda vez que a Hostinger reiniciar seu VPS, o nó subirá automaticamente no boot do sistema operacional, carregando o último bloco minerado **sem apagar nenhum dado**.
 
 ---
 

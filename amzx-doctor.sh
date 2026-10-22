@@ -146,7 +146,12 @@ if ss -tulpn 2>/dev/null | grep -q ":6869 " || curl -s -m 2 http://127.0.0.1:686
     echo -e "  - Versão do Nó:      📦 ${CYAN}$VERSION${NC}"
 else
     echo -e "  - Status do Nó:      🔴 ${RED}${BOLD}OFFLINE (Porta 6869 fechada)${NC}"
-    if [ -n "$RUN_DIR" ] && [ -f "$RUN_DIR/start-node.sh" ]; then
+    if command -v systemctl &>/dev/null && systemctl list-unit-files 2>/dev/null | grep -q "amzx-node"; then
+        echo -e "  🔄 ${CYAN}Reiniciando Nó Blockchain via systemd (preservando banco de dados)...${NC}"
+        sudo systemctl restart amzx-node 2>/dev/null || true
+        sleep 2
+        echo -e "  ✅ ${GREEN}Comando systemctl restart amzx-node executado com sucesso.${NC}"
+    elif [ -n "$RUN_DIR" ] && [ -f "$RUN_DIR/start-node.sh" ]; then
         echo -e "  🔄 ${CYAN}Reiniciando Nó Blockchain a partir do último bloco (sem apagar dados)...${NC}"
         cd "$RUN_DIR"
         nohup ./start-node.sh < /dev/null > node.log 2>&1 &
