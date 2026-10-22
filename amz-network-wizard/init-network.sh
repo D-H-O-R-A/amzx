@@ -398,9 +398,9 @@ export JAVA_HOME="$JAVA_HOME"
 export PATH=$JAVA_HOME/bin:$PATH
 
 # Locate the compiled AMZX Node Fat JAR (always search for it)
-FAT_JAR="$WAVES_SRC_DIR/node/target/waves-all-1.6.3-DIRTY.jar"
-if [ ! -f "$FAT_JAR" ]; then
-  FAT_JAR=$(find "$WAVES_SRC_DIR" -name "waves-all*.jar" | head -n 1)
+FAT_JAR=$(find "$WAVES_SRC_DIR/node/target" -name "waves-all*.jar" 2>/dev/null | head -n 1)
+if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
+  FAT_JAR=$(find "$WAVES_SRC_DIR" -name "waves-all*.jar" 2>/dev/null | head -n 1)
 fi
 
 if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
@@ -428,7 +428,7 @@ if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
     echo -e "${GREEN}${BOLD}Compilações completadas com sucesso! Continuando configuração...${NC}"
   else
     echo -e "⚠️  ${RED}Prosseguindo sem o Fat JAR. O script de inicialização do nó start-node.sh pode não funcionar até que você o compile manualmente.${NC}"
-    FAT_JAR="$WAVES_SRC_DIR/node/target/waves-all-1.6.3-DIRTY.jar" # default placeholder
+    FAT_JAR="$WAVES_SRC_DIR/node/target/waves-all-1.6.4.jar" # default placeholder
   fi
 fi
 

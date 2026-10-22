@@ -6,13 +6,13 @@ on:
 
 jobs:
   publish-node-image:
-    name: Publish Waves Node to Docker Hub
+    name: Publish AMZX Node Container Image
     uses: ./.github/workflows/publish-docker-image.yml
     with:
       raw-docker-tags: |
         type=match,pattern=v(.*),group=1
         type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
-      environment: Docker Hub
+      environment: ${{ secrets.DOCKERHUB_USER != '' && 'Docker Hub' || '' }}
     permissions:
       contents: read
       packages: write
@@ -26,23 +26,24 @@ jobs:
     name: Publish Private Node to Docker Hub
     environment: Docker Hub
     needs: publish-node-image
+    if: secrets.DOCKERHUB_USER != '' && secrets.DOCKERHUB_PASSWORD != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-      - uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
       - id: meta-private
-        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
-          images: wavesplatform/waves-private-node
+          images: ${{ secrets.DOCKERHUB_USER }}/amzx-private-node
           flavor: latest=false
           tags: |
             type=ref,event=tag
             type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
-      - uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           platforms: linux/amd64,linux/arm64
           context: ./docker/private
@@ -50,35 +51,36 @@ jobs:
           pull: true
           tags: ${{ steps.meta-private.outputs.tags }}
           build-args: |
-            baseImage=wavesplatform/wavesnode@${{ needs.publish-node-image.outputs.digest }}
+            baseImage=ghcr.io/${{ github.repository }}@${{ needs.publish-node-image.outputs.digest }}
 
   publish-ride-runner-image:
     name: Publish RIDE Runner to Docker Hub
     environment: Docker Hub
+    if: secrets.DOCKERHUB_USER != '' && secrets.DOCKERHUB_PASSWORD != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'temurin'
           java-version: '17'
           cache: 'sbt'
-      - uses: sbt/setup-sbt@508b753e53cb6095967669e0911487d2b9bc9f41 # v1.1.22
+      - uses: sbt/setup-sbt@3afe9cf056c5d139bfc46579af1192d77a2f0821 # v1.4.0
       - run: sbt --batch 'buildRIDERunnerForDocker'
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-      - uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
       - id: meta-ride-runner
-        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
         with:
-          images: wavesplatform/ride-runner
+          images: ${{ secrets.DOCKERHUB_USER }}/ride-runner
           flavor: latest=false
           tags: |
             type=match,pattern=v(.*),group=1
             type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
-      - uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./ride-runner/docker
           push: ${{ github.event_name == 'release' }}
@@ -89,9 +91,9 @@ jobs:
     environment: prod
     name: Publish JARs to Sonatype
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' && (github.repository == 'wavesplatform/Waves' || secrets.OSSRH_USERNAME != '')
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - id: sbt-version
         run: |
           sbt_version=$(cut -d\" -f2 version.sbt)
@@ -103,14 +105,14 @@ jobs:
         run: |
           echo "::error::Release version $RELEASE_VERSION does not match SBT version $SBT_VERSION"
           exit 1
-      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: 'temurin'
           java-version: '17'
           cache: 'sbt'
           gpg-private-key: ${{ secrets.OSSRH_GPG_KEY }}
           gpg-passphrase: ${{ secrets.OSSRH_GPG_PASSPHRASE }}
-      - uses: sbt/setup-sbt@508b753e53cb6095967669e0911487d2b9bc9f41 # v1.1.22
+      - uses: sbt/setup-sbt@3afe9cf056c5d139bfc46579af1192d77a2f0821 # v1.4.0
       - name: Publish release jars
         env:
           SONATYPE_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
@@ -118,4 +120,27 @@ jobs:
           PGP_PASSPHRASE: ${{ secrets.OSSRH_GPG_PASSPHRASE }}
         run: |
           sbt --batch ";publishSigned;sonaRelease"
+
+  publish-amzx-release-assets:
+    name: Build & Publish AMZX Release Binaries
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'sbt'
+      - uses: sbt/setup-sbt@3afe9cf056c5d139bfc46579af1192d77a2f0821 # v1.4.0
+      - name: Build AMZX Fat JAR and extensions
+        run: |
+          sbt --batch "node/assembly; waves-ext/packageBin"
+      - name: Upload binaries to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" node/target/waves-all-*.jar waves-ext/target/scala-*/*.jar --clobber || true
 

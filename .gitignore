@@ -41,5 +41,9 @@ package
 !ride-runner/src/package
 native
 
+# Node & tools
+node_modules/
+volume-*.jsonl
+
 lang/js/dist
 repl/js/dist

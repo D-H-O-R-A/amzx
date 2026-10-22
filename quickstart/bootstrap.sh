@@ -111,10 +111,15 @@ if [[ "$RUN_NOW" =~ ^[Ss]$ ]]; then
     echo -e "\n${GREEN}🚀 Iniciando o Nó Blockchain em segundo plano...${NC}"
     cd "$WAVES_DIR" || exit 1
     
+    NODE_JAR=$(find "$WAVES_DIR/node/target" -name "waves-all*.jar" 2>/dev/null | head -n 1)
+    if [ -z "$NODE_JAR" ]; then
+      NODE_JAR=$(find "$WAVES_DIR" -name "waves-all*.jar" 2>/dev/null | head -n 1)
+    fi
+
     java \
       --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
       --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED \
-      -cp "node/target/waves-all-1.6.3-DIRTY.jar:$OUTPUT_DIR/lib/*" \
+      -cp "${NODE_JAR:-node/target/waves-all-1.6.4.jar}:$OUTPUT_DIR/lib/*" \
       com.wavesplatform.Application "$OUTPUT_DIR/custom-blockchain.conf" > "$OUTPUT_DIR/node.log" 2>&1 &
     
     NODE_PID=$!

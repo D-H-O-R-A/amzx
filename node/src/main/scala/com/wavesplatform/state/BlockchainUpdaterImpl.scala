@@ -194,6 +194,12 @@ class BlockchainUpdaterImpl(
             Some(currentReward)
         }
         .orElse(lastBlockReward)
+        .map { reward =>
+          // AdjustedBlockRewardDistribution resets the block reward to its own initial value at the activation height, the voting continues from there
+          if (this.featureActivationHeight(BlockchainFeatures.AdjustedBlockRewardDistribution).contains(nextHeight))
+            BlockRewardCalculator.AdjustedFullReward
+          else reward
+        }
   }
 
   /** Referenced blockchain for mining or appending new block that references the latest block in blockchain or a microblock
@@ -426,7 +432,7 @@ class BlockchainUpdaterImpl(
 
                 restTotalConstraint = updatedTotalConstraint
                 if (
-                  (block.header.timestamp > time.getTimestamp() - wavesSettings.minerSettings.intervalAfterLastBlockThenGenerationIsAllowed.toMillis)
+                  (block.header.timestamp > time.correctedTime() - wavesSettings.minerSettings.intervalAfterLastBlockThenGenerationIsAllowed.toMillis)
                   || (newHeight.toInt % 100 == 0)
                 ) {
                   currentFinalizedHeight.foreach { h =>
