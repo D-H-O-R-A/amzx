@@ -50,7 +50,7 @@ object Dependencies {
   private def grpcModule(module: String) = "io.grpc" % module % "1.83.1"
 
   val pekkoHttp       = pekkoHttpModule("pekko-http")
-  val googleGuava     = "com.google.guava"    % "guava"             % "33.7.1-jre"
+  val googleGuava     = "com.google.guava"    % "guava"             % "33.7.2-jre"
   val kamonCore       = kamonModule("core")
   val machinist       = "org.typelevel"      %% "machinist"         % "0.6.8"
   val logback         = "ch.qos.logback"      % "logback-classic"   % "1.6.3"
