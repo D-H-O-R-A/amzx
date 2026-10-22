@@ -28,6 +28,7 @@ import org.web3j.abi.FunctionEncoder
 import org.web3j.abi.datatypes.generated.{Uint256, Uint8}
 import org.web3j.abi.datatypes.{Bool, Utf8String}
 import org.web3j.crypto.*
+import org.web3j.utils.Numeric
 import play.api.libs.json.*
 import play.api.libs.json.Json.JsValueWrapper
 
@@ -153,8 +154,11 @@ class EthRpcRoute(
     val methodOpt = (jso \ "method").asOpt[String]
 
     methodOpt match {
-      case Some("eth_chainId" | "net_version") =>
+      case Some("eth_chainId") =>
         Future.successful(respObj(id, quantity(blockchain.settings.addressSchemeCharacter.toInt)))
+
+      case Some("net_version") =>
+        Future.successful(respObj(id, JsString(blockchain.settings.addressSchemeCharacter.toInt.toString)))
 
       case Some("eth_blockNumber") =>
         Future.successful(respObj(id, quantity(blockchain.height)))
@@ -441,6 +445,73 @@ class EthRpcRoute(
 
       case Some("net_peerCount") =>
         Future.successful(respObj(id, "0x1"))
+
+      case Some("eth_protocolVersion") =>
+        Future.successful(respObj(id, "0x41"))
+
+      case Some("eth_getBlockTransactionCountByNumber") =>
+        val tagOrHex = (jso \ "params" \ 0).asOpt[String]
+        val targetHeightOpt: Option[Int] = tagOrHex match {
+          case Some("earliest") => Some(1)
+          case Some("latest") | Some("pending") => Some(blockchain.height)
+          case Some(other) => Try(Integer.parseInt(cleanHexPrefix(other), 16)).toOption
+          case None => None
+        }
+        val countJson: JsValue = targetHeightOpt.flatMap(h => blockchain.blockHeader(h)).fold[JsValue](JsNull)(_ => JsString("0x0"))
+        Future.successful(respObj(id, countJson))
+
+      case Some("eth_getBlockTransactionCountByHash") =>
+        val countJson: JsValue = (jso \ "params" \ 0).asOpt[String].flatMap { hashStr =>
+          val blockId = ByteStr(toBytes(hashStr))
+          blockchain.heightOf(blockId).flatMap(h => blockchain.blockHeader(h))
+        }.fold[JsValue](JsNull)(_ => JsString("0x0"))
+        Future.successful(respObj(id, countJson))
+
+      case Some("eth_getTransactionByBlockHashAndIndex") | Some("eth_getTransactionByBlockNumberAndIndex") =>
+        Future.successful(respObj(id, JsNull))
+
+      case Some("eth_getUncleCountByBlockHash") | Some("eth_getUncleCountByBlockNumber") =>
+        Future.successful(respObj(id, "0x0"))
+
+      case Some("eth_getUncleByBlockHashAndIndex") | Some("eth_getUncleByBlockNumberAndIndex") =>
+        Future.successful(respObj(id, JsNull))
+
+      case Some("eth_getStorageAt") =>
+        Future.successful(respObj(id, "0x" + zeroes(64)))
+
+      case Some("personal_listAccounts") =>
+        Future.successful(respObj(id, Json.arr()))
+
+      case Some("personal_ecRecover") =>
+        val msgOpt = (jso \ "params" \ 0).asOpt[String]
+        val sigOpt = (jso \ "params" \ 1).asOpt[String]
+        val recoveredOpt = for {
+          msg <- msgOpt
+          sig <- sigOpt
+          cleanSig = cleanHexPrefix(sig)
+          if cleanSig.length == 130
+          r = new BigInteger(cleanSig.substring(0, 64), 16)
+          s = new BigInteger(cleanSig.substring(64, 128), 16)
+          v = Integer.parseInt(cleanSig.substring(128, 130), 16).toByte
+          msgBytes = if (msg.startsWith("0x")) toBytes(msg) else msg.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+          sigData = new Sign.SignatureData(v, Numeric.toBytesPadded(r, 32), Numeric.toBytesPadded(s, 32))
+          key <- Try(Sign.signedPrefixedMessageToKey(msgBytes, sigData)).orElse(
+            Try(Sign.signedMessageHashToKey(msgBytes, sigData))
+          ).toOption
+        } yield Keys.toChecksumAddress(Keys.getAddress(key))
+        Future.successful(respObj(id, recoveredOpt.fold[JsValueWrapper](JsNull)(JsString.apply)))
+
+      case Some("web3_sha3") =>
+        extractParam1[String](jso) { hexStr =>
+          val hash = Hash.sha3(hexStr)
+          Future.successful(respObj(id, JsString(hash)))
+        }
+
+      case Some("eth_getLogs") =>
+        Future.successful(respObj(id, Json.arr()))
+
+      case Some("eth_sendTransaction") | Some("eth_sign") | Some("personal_sign") =>
+        Future.successful(apiErrorToRpcError(id, GenericError("Node does not hold private keys; sign locally with web3.eth.accounts or MetaMask and use eth_sendRawTransaction")))
 
       case Some("eth_coinbase") =>
         Future.successful(respObj(id, "0x0000000000000000000000000000000000000000"))

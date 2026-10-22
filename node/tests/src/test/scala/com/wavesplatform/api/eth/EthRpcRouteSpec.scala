@@ -367,6 +367,26 @@ class EthRpcRouteSpec extends RouteSpec("/eth") with WithDomain with EthHelpers 
     routeTest(d, "net_peerCount")(result shouldBe "0x1")
   }
 
+  "additional Web3.js compatibility methods" in withDomain() { d =>
+    routeTest(d, "net_version")(result shouldBe d.blockchain.settings.addressSchemeCharacter.toLong.toString)
+    routeTest(d, "eth_protocolVersion")(result shouldBe "0x41")
+    routeTest(d, "eth_getStorageAt", "0x0000000000000000000000000000000000000000", "0x0", "latest")(result should startWith("0x000"))
+    routeTest(d, "personal_listAccounts")((responseAs[JsObject] \ "result").as[JsArray] shouldBe Json.arr())
+    routeTest(d, "web3_sha3", "0x68656c6c6f")(result should startWith("0x"))
+    routeTest(d, "eth_getUncleCountByBlockHash", "0x00")(result shouldBe "0x0")
+    routeTest(d, "eth_getUncleCountByBlockNumber", "latest")(result shouldBe "0x0")
+    routeTest(d, "eth_getUncleByBlockHashAndIndex", "0x00", "0x0")((responseAs[JsObject] \ "result").get shouldBe JsNull)
+    routeTest(d, "eth_getUncleByBlockNumberAndIndex", "latest", "0x0")((responseAs[JsObject] \ "result").get shouldBe JsNull)
+    d.appendBlock()
+    routeTest(d, "eth_getBlockTransactionCountByNumber", "latest")(result shouldBe "0x0")
+    routeTest(d, "eth_getBlockTransactionCountByHash", toHexString(d.lastBlockId.arr))(result shouldBe "0x0")
+    routeTest(d, "eth_getTransactionByBlockNumberAndIndex", "latest", "0x0")((responseAs[JsObject] \ "result").get shouldBe JsNull)
+    routeTest(d, "eth_getTransactionByBlockHashAndIndex", toHexString(d.lastBlockId.arr), "0x0")((responseAs[JsObject] \ "result").get shouldBe JsNull)
+    routeTest(d, "eth_getLogs", Json.obj("fromBlock" -> "latest", "toBlock" -> "latest")) {
+      (responseAs[JsObject] \ "result").as[JsArray] shouldBe Json.arr()
+    }
+  }
+
   "full block details" in withDomain() { d =>
     d.appendBlock()
     routeTest(d, "eth_getBlockByNumber", "latest") {
