@@ -35,6 +35,14 @@ The targeted reset utility for Matcher DEX & FullExplorer.
 
 ---
 
+### 3. `init-network.sh` (EVM & WSS Proxy Architecture)
+The network wizard automatically provisions Nginx reverse proxies with full Web3 / MetaMask support:
+- **Endpoint:** `rpc.<BASE_DOMAIN>` routing to `http://127.0.0.1:$REST_API_PORT/eth/`
+- **WebSocket Upgrade:** Pre-configured with `Upgrade $http_upgrade` and `Connection "upgrade"` headers for low-latency JSON-RPC subscriptions over `wss://`.
+- **CORS Headers:** Full preflight `OPTIONS` and standard `Access-Control-Allow-*` headers enabling browser extensions and decentralized applications (dApps) to communicate without cross-origin blocks.
+
+---
+
 ## 👨‍💻 Contacts & Support
 - **Developer:** Diego Antunes (diegoantunes2301@gmail.com)
 - **WhatsApp:** +55 (11) 97428-9097

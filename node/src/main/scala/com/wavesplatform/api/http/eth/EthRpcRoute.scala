@@ -18,7 +18,7 @@ import com.wavesplatform.api.http.ApiError.{CustomValidationError, InvalidIds}
 import com.wavesplatform.api.http.assets.AssetsApiRoute
 import com.wavesplatform.block.BlockHeader
 import com.wavesplatform.common.state.ByteStr
-import com.wavesplatform.state.{Blockchain, TxMeta}
+import com.wavesplatform.state.{BinaryDataEntry, Blockchain, BooleanDataEntry, DataEntry, IntegerDataEntry, StringDataEntry, TxMeta}
 import com.wavesplatform.transaction.Asset.IssuedAsset
 import com.wavesplatform.transaction.TxValidationError.GenericError
 import com.wavesplatform.transaction.{ERC20Address, EthABIConverter, EthereumTransaction}
@@ -215,15 +215,9 @@ class EthRpcRoute(
 
       case Some("eth_getBalance") =>
         extractParam1[String](jso) { str =>
-          val address = Address.fromHexString(str)
-          Future.successful(
-            respObj(
-              id,
-              toHexString(
-                BigInt(blockchain.balance(address)) * EthereumTransaction.AmountMultiplier
-              )
-            )
-          )
+          val addressOpt = resolveAmzxAddress(str)
+          val bal = addressOpt.fold(BigInt(0))(addr => BigInt(blockchain.balance(addr)) * EthereumTransaction.AmountMultiplier)
+          Future.successful(respObj(id, toHexString(bal)))
         }
 
       case Some("eth_sendRawTransaction") =>
@@ -254,16 +248,19 @@ class EthRpcRoute(
                     val tokenEthAddr = toHexString(tokenAddress.arr)
                     val fromAddrPadded = "0x" + zeroes(24) + toHexString(tx.senderAddress().publicKeyHash).drop(2)
                     val toAddrPadded = "0x" + zeroes(24) + toHexString(recipient.publicKeyHash).drop(2)
-                    val amountHexPadded = "0x" + String.format("%064x", BigInteger.valueOf(amount))
+                    val isNft = assetDescription(tokenEthAddr).exists(d => d.nft && d.script.isEmpty)
+                    val (topics, dataHex) = if (isNft) {
+                      val tokenIdPadded = "0x" + zeroes(63) + "1"
+                      (Json.arr("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", fromAddrPadded, toAddrPadded, tokenIdPadded), "0x")
+                    } else {
+                      val amountHexPadded = "0x" + String.format("%064x", BigInteger.valueOf(amount))
+                      (Json.arr("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", fromAddrPadded, toAddrPadded), amountHexPadded)
+                    }
                     Json.arr(
                       Json.obj(
                         "address"          -> tokenEthAddr,
-                        "topics"           -> Json.arr(
-                          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", // Transfer(address,address,uint256)
-                          fromAddrPadded,
-                          toAddrPadded
-                        ),
-                        "data"             -> amountHexPadded,
+                        "topics"           -> topics,
+                        "data"             -> dataHex,
                         "blockNumber"      -> toHexString(BigInteger.valueOf(tm.height.toInt)),
                         "transactionHash"  -> toHexString(tm.transaction.id().arr),
                         "transactionIndex" -> "0x1",
@@ -352,7 +349,7 @@ class EthRpcRoute(
 
               case "70a08231" => // balanceOf(address)
                 val ownerHex = if (cleanData.length >= 48) cleanData.takeRight(40) else zeroes(40)
-                val ownerAddr = Try(Address.fromHexString(ownerHex)).toOption
+                val ownerAddr = resolveAmzxAddress(ownerHex)
                 val balance = (for {
                   addr <- ownerAddr
                   ia   <- assetId(contractAddress)
@@ -363,7 +360,28 @@ class EthRpcRoute(
                 Future.successful(respObj(id, encodeResponse(new Uint256(BigInteger.valueOf(Long.MaxValue)))))
 
               case "01ffc9a7" => // supportsInterface(bytes4)
-                Future.successful(respObj(id, encodeResponse(new Bool(false))))
+                val ifaceId = if (cleanData.length >= 16) cleanData.substring(8, 16) else ""
+                val isNft = assetDescription(contractAddress).exists(d => d.nft && d.script.isEmpty)
+                val supported = if (isNft) {
+                  ifaceId == "80ac58cd" || // ERC-721
+                  ifaceId == "5b5e139f" || // ERC-721 Metadata
+                  ifaceId == "780e9d63" || // ERC-721 Enumerable
+                  ifaceId == "01ffc9a7"    // ERC-165
+                } else {
+                  ifaceId == "01ffc9a7"
+                }
+                Future.successful(respObj(id, encodeResponse(new Bool(supported))))
+
+              case "c87b56dd" => // tokenURI(uint256)
+                val uri = assetDescription(contractAddress).fold("")(_.description.toStringUtf8)
+                Future.successful(respObj(id, encodeResponse(new Utf8String(uri))))
+
+              case "6352211e" => // ownerOf(uint256)
+                val ownerEthAddr = assetDescription(contractAddress).fold("0x" + zeroes(40))(d => toHexString(d.issuer.toAddress.publicKeyHash))
+                Future.successful(respObj(id, encodeResponse(new org.web3j.abi.datatypes.Address(ownerEthAddr))))
+
+              case "4f6ccce7" | "2f745159" => // tokenByIndex(uint256) / tokenOfOwnerByIndex(address,uint256)
+                Future.successful(respObj(id, encodeResponse(new Uint256(BigInteger.ONE))))
 
               case _ =>
                 Future.successful(respObj(id, "0x"))
@@ -477,7 +495,33 @@ class EthRpcRoute(
         Future.successful(respObj(id, JsNull))
 
       case Some("eth_getStorageAt") =>
-        Future.successful(respObj(id, "0x" + zeroes(64)))
+        val addressStrOpt = (jso \ "params" \ 0).asOpt[String]
+        val posOpt        = (jso \ "params" \ 1).asOpt[String]
+        val storageVal = (for {
+          addrStr <- addressStrOpt
+          addr    <- resolveAmzxAddress(addrStr)
+          pos     <- posOpt
+        } yield {
+          val cleanPos = cleanHexPrefix(pos).toLowerCase
+          val directKeyOpt = Try(new String(toBytes(cleanPos), java.nio.charset.StandardCharsets.UTF_8)).toOption
+            .filter(k => k.nonEmpty && k.forall(c => !Character.isISOControl(c)))
+          val entryByKey = directKeyOpt.flatMap(k => blockchain.accountData(addr, k))
+
+          entryByKey match {
+            case Some(entry) => formatDataEntryToStorage(entry)
+            case None =>
+              blockchain.accountData(addr, pos) match {
+                case Some(entry) => formatDataEntryToStorage(entry)
+                case None =>
+                  val slotIndexOpt = Try(new BigInteger(cleanPos, 16)).toOption
+                  slotIndexOpt.flatMap(idx => blockchain.accountData(addr, idx.toString)) match {
+                    case Some(entry) => formatDataEntryToStorage(entry)
+                    case None => "0x" + zeroes(64)
+                  }
+              }
+          }
+        }).getOrElse("0x" + zeroes(64))
+        Future.successful(respObj(id, storageVal))
 
       case Some("personal_listAccounts") =>
         Future.successful(respObj(id, Json.arr()))
@@ -531,9 +575,10 @@ class EthRpcRoute(
 
       case Some("eth_getCode") =>
         extractParam1[String](jso) { str =>
-          val address = Address.fromHexString(str)
+          val addressOpt = resolveAmzxAddress(str)
+          val hasCode = addressOpt.exists(blockchain.hasDApp) || assetDescription(str).isDefined
           Future.successful(
-            respObj(id, if (blockchain.hasDApp(address) || assetDescription(str).isDefined) "0xff" else "0x")
+            respObj(id, if (hasCode) "0xff" else "0x")
           )
         }
 
@@ -632,6 +677,34 @@ class EthRpcRoute(
 
   private def encodeResponse(values: org.web3j.abi.datatypes.Type[?]*): String =
     "0x" + FunctionEncoder.encodeConstructor(values.asJava)
+
+  private def resolveAmzxAddress(addressStr: String): Option[Address] = {
+    val cleanStr = cleanHexPrefix(addressStr)
+    if (addressStr.startsWith("0x") || cleanStr.length == 40) {
+      Try(Address.fromHexString(cleanStr)).toOption
+    } else {
+      Address.fromString(addressStr).toOption
+    }
+  }
+
+  private def formatDataEntryToStorage(entry: DataEntry[?]): String = {
+    entry match {
+      case IntegerDataEntry(_, value) =>
+        "0x" + String.format("%064x", BigInteger.valueOf(value))
+      case BooleanDataEntry(_, value) =>
+        "0x" + zeroes(63) + (if (value) "1" else "0")
+      case BinaryDataEntry(_, value) =>
+        val hex = toHexString(value.arr).drop(2)
+        if (hex.length >= 64) "0x" + hex.take(64)
+        else "0x" + hex + zeroes(64 - hex.length)
+      case StringDataEntry(_, value) =>
+        val hex = toHexString(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)).drop(2)
+        if (hex.length >= 64) "0x" + hex.take(64)
+        else "0x" + hex + zeroes(64 - hex.length)
+      case _ =>
+        "0x" + zeroes(64)
+    }
+  }
 
   private def extractTransaction(transactionHex: String) = TransactionDecoder.decode(transactionHex) match {
     case srt: SignedRawTransaction => EthereumTransaction(srt)

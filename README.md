@@ -133,6 +133,29 @@ cd amz-network-wizard
 
 ---
 
+## 🦊 Web3, MetaMask & EVM JSON-RPC Layer (HTTP & WSS)
+
+AMZX features a high-performance EVM compatibility proxy layer allowing **MetaMask**, **Trust Wallet**, **SafePal**, **Web3.js**, **Ethers.js**, and dApps to interact directly with the AMZX blockchain over HTTP and WebSocket (`ws://` / `wss://`).
+
+### 🌐 Network Configuration (MetaMask / Web3):
+- **Network Name:** AMZX Network
+- **RPC URL:** `https://rpc.<your-domain>/` (or `http://127.0.0.1:6869/eth/`)
+- **WebSocket URL:** `wss://rpc.<your-domain>/` (or `ws://127.0.0.1:6869/eth/`)
+- **Chain ID:** Configured network chainId (e.g., `84` or custom)
+- **Currency Symbol:** `AMZX`
+
+### 💎 Key EVM & Web3 Capabilities:
+- **WebSocket PubSub (`eth_subscribe` / `eth_unsubscribe`):** Live event streaming for `newHeads`, transaction confirmations, and state updates.
+- **EIP-1559 Fee Market:** Full gas estimation with `eth_feeHistory`, `eth_maxPriorityFeePerGas`, `eth_gasPrice`, and `eth_estimateGas`.
+- **JSON-RPC Batching:** Simultaneous multi-call support for extensions and client libraries.
+- **Full ERC-20 Support:** Instant balance, token symbol, name, and decimals detection via `eth_call` (`name`, `symbol`, `decimals`, `totalSupply`, `balanceOf`, `allowance`). Emits standard `Transfer(from, to, value)` receipt logs.
+- **Virtual ERC-721 NFT Support:** Automatic NFT detection via EIP-165 `supportsInterface(0x80ac58cd)`. Surfaces metadata URLs via `tokenURI(tokenId)` pointing directly to the asset's IPFS/HTTPS description, alongside `ownerOf()`, `name()`, `symbol()`, and `balanceOf()`.
+- **Native State Storage (`eth_getStorageAt`):** Maps EVM slot indexing and string key queries directly to the AMZX account data storage (`accountData`), outputting 32-byte hex values.
+- **Cryptographic & Utility Methods:** `web3_clientVersion`, `net_version`, `net_listening`, `net_peerCount`, `web3_sha3`, `personal_ecRecover`, and `eth_getLogs`.
+- **ChainID-Bound Address Resolution:** Validates and binds 20-byte EVM addresses with the active network `chainId` and checksum for 100% interoperability with native AMZX Base58 addresses.
+
+---
+
 ## 👨‍💻 Developer & Support Contacts
 
 For inquiries, support, integration consulting, or commercial collaborations, reach out to the project developer:

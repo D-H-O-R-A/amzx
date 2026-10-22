@@ -8,7 +8,7 @@ import com.wavesplatform.history.{DefaultWavesSettings, Domain, settingsWithFeat
 import com.wavesplatform.http.RouteSpec
 import com.wavesplatform.lang.directives.values.V5
 import com.wavesplatform.lang.v1.compiler.TestCompiler
-import com.wavesplatform.state.BinaryDataEntry
+import com.wavesplatform.state.{BinaryDataEntry, IntegerDataEntry}
 import com.wavesplatform.test.*
 import com.wavesplatform.test.node.{randomAddress, randomKeyPair}
 import com.wavesplatform.transaction.TxHelpers.issue
@@ -418,6 +418,49 @@ class EthRpcRouteSpec extends RouteSpec("/eth") with WithDomain with EthHelpers 
     // allowance() = 0xdd62ed3e
     routeTest(d, "eth_call", Json.obj("to" -> tokenAddr, "data" -> "0xdd62ed3e")) {
       result should startWith("0x")
+    }
+  }
+
+  "ERC-721 NFT detection & metadata" in withDomain(
+    settingsWithFeatures(BlockchainFeatures.ReduceNFTFee, BlockchainFeatures.BlockV5, BlockchainFeatures.SynchronousCalls, BlockchainFeatures.RideV6)
+  ) { d =>
+    val randomKP = randomKeyPair()
+    val nftIssueTx = TxHelpers.issue(randomKP, 1, 0, "AMZNFT", "https://amzx.io/metadata/1.json", 1.waves, reissuable = false, version = TxVersion.V2)
+    d.appendBlock(
+      GenesisTransaction.create(randomKP.toAddress, 5.waves, ntpTime.correctedTime()).explicitGet(),
+      nftIssueTx
+    )
+    val nftAddr = EthEncoding.toHexString(nftIssueTx.id().arr.take(20))
+    // supportsInterface(0x80ac58cd) = true (ERC-721)
+    routeTest(d, "eth_call", Json.obj("to" -> nftAddr, "data" -> "0x01ffc9a780ac58cd00000000000000000000000000000000000000000000000000000000")) {
+      result should endWith("1")
+    }
+    // tokenURI(1) = 0xc87b56dd
+    routeTest(d, "eth_call", Json.obj("to" -> nftAddr, "data" -> "0xc87b56dd0000000000000000000000000000000000000000000000000000000000000001")) {
+      result should include("68747470733a2f2f616d7a782e696f")
+    }
+    // ownerOf(1) = 0x6352211e
+    routeTest(d, "eth_call", Json.obj("to" -> nftAddr, "data" -> "0x6352211e0000000000000000000000000000000000000000000000000000000000000001")) {
+      result should startWith("0x")
+    }
+    // totalSupply() = 1
+    routeTest(d, "eth_call", Json.obj("to" -> nftAddr, "data" -> "0x18160ddd")) {
+      resultInt shouldBe 1
+    }
+  }
+
+  "eth_getStorageAt with account data" in withDomain(
+    settingsWithFeatures(BlockchainFeatures.DataTransaction, BlockchainFeatures.BlockV5, BlockchainFeatures.SynchronousCalls, BlockchainFeatures.RideV6)
+  ) { d =>
+    val randomKP = randomKeyPair()
+    val dataTx = TxHelpers.data(randomKP, Seq(IntegerDataEntry("balance", 123456L)), 0.005.waves, version = TxVersion.V2)
+    d.appendBlock(
+      GenesisTransaction.create(randomKP.toAddress, 5.waves, ntpTime.correctedTime()).explicitGet(),
+      dataTx
+    )
+    val ethAddr = randomKP.toAddress.toEthAddress
+    routeTest(d, "eth_getStorageAt", ethAddr, "0x62616c616e6365", "latest") {
+      result should endWith("1e240")
     }
   }
 
