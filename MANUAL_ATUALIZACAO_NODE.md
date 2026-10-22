@@ -7,14 +7,71 @@
 
 ## 🔒 Princípio de Preservação Absoluta dos Dados
 
-Ao atualizar o software do AMZX Node para uma nova versão (ex: da `v1.6.4` para a `v1.6.5` ou superior), **nenhum dado da blockchain é apagado**.
+Ao atualizar o software do AMZX Node para uma nova versão (ex: da `v1.6.4` para a `v1.6.5` / `v1.6.6` ou superior), **nenhum dado da blockchain é apagado**.
 
 Toda a persistência do AMZX é dividida com total isolamento:
 1. **Binários do Software (Substituíveis):** Os arquivos `.jar`, executáveis e scripts de inicialização.
-2. **Dados da Blockchain (Intocáveis):** O banco de dados LevelDB / RocksDB armazenado na pasta `data` (configurado pela diretiva `waves.directory` no seu `blockchain.conf`). Nele estão todos os blocos desde o Gênesis, contas, saldos, histórico de transações e estado do consenso.
+2. **Dados da Blockchain (Intocáveis):** O banco de dados LevelDB / RocksDB armazenado na pasta `data` ou `node-data` (configurado pela diretiva `waves.directory` no seu `blockchain.conf`). Nele estão todos os blocos desde o Gênesis, contas, saldos, histórico de transações e estado do consenso.
 3. **Configuração e Chaves (Intocáveis):** O seu arquivo `blockchain.conf` e a carteira criptografada `wallet.dat`.
 
 Quando o nó é encerrado de forma correta e reiniciado com o novo executável, ele **lê o banco existente, detecta o último bloco minerado e continua sincronizando ou forjando blocos imediatamente**.
+
+---
+
+## 🗺️ Mapa de Diretórios: Onde Fica Cada Arquivo no Seu Servidor / VPS
+
+Para não ter nenhuma dúvida de onde está cada arquivo no seu servidor, veja o mapa exato da estrutura criada pelo AMZX:
+
+### 1. Se você CRIOU A REDE pelo assistente (`./init-network.sh`):
+A pasta de execução fica dentro de `amz-network-wizard/` com o prefixo `run-amzx-<CHAIN_ID>`:
+
+| Arquivo / Pasta | Caminho Exato no VPS | Função |
+| :--- | :--- | :--- |
+| **`start-node.sh`** | `~/amzx/amz-network-wizard/run-amzx-<CHAIN_ID>/start-node.sh` | Script que inicializa o nó blockchain com os parâmetros Java |
+| **`stop-node.sh`** | `~/amzx/amz-network-wizard/run-amzx-<CHAIN_ID>/stop-node.sh` | Para o nó de forma limpa (sem corromper o banco de dados) |
+| **`blockchain.conf`** | `~/amzx/amz-network-wizard/run-amzx-<CHAIN_ID>/blockchain.conf` | Arquivo de configuração principal (portas, chainId, seeds) |
+| **`node-data/`** ou **`data/`** | `~/amzx/amz-network-wizard/run-amzx-<CHAIN_ID>/data/` | **Banco de dados da blockchain** (LevelDB com todos os blocos) |
+| **`node.log`** | `~/amzx/amz-network-wizard/run-amzx-<CHAIN_ID>/node.log` | Arquivo de log com a atividade em tempo real do nó |
+| **`start-matcher.sh`** | `~/amzx/amz-network-wizard/run-amzx-<CHAIN_ID>/start-matcher.sh` | Inicialização do Matcher DEX |
+| **`matcher.conf`** | `~/amzx/amz-network-wizard/run-amzx-<CHAIN_ID>/matcher.conf` | Configuração do livro de ordens e pares de negociação |
+| **`start-data-service.sh`** | `~/amzx/amz-network-wizard/run-amzx-<CHAIN_ID>/start-data-service.sh` | Inicialização do indexador de API e Swagger |
+
+*(Substitua `<CHAIN_ID>` pela letra ou número da sua rede, por exemplo: `run-amzx-C` ou `run-amzx-84`).*
+
+---
+
+### 2. Se você ENTROU COMO VALIDADOR ou NÓ pelo (`./join-network.sh`):
+A pasta de execução fica dentro de `amz-network-wizard/` com o prefixo `run-validator-<CHAIN_ID>` ou `run-node-<CHAIN_ID>`:
+
+| Arquivo / Pasta | Caminho Exato no VPS | Função |
+| :--- | :--- | :--- |
+| **`start-node.sh`** | `~/amzx/amz-network-wizard/run-validator-<CHAIN_ID>/start-node.sh` | Script de inicialização do nó validador |
+| **`stop-node.sh`** | `~/amzx/amz-network-wizard/run-validator-<CHAIN_ID>/stop-node.sh` | Script de parada graciosa do validador |
+| **`blockchain.conf`** | `~/amzx/amz-network-wizard/run-validator-<CHAIN_ID>/blockchain.conf` | Configuração com o bloco gênesis e peers da rede |
+| **`wallet.dat`** | `~/amzx/amz-network-wizard/run-validator-<CHAIN_ID>/node-data/wallet/wallet.dat` | **Carteira criptografada** com a seed do minerador |
+| **`data/`** | `~/amzx/amz-network-wizard/run-validator-<CHAIN_ID>/node-data/` | **Banco de dados da blockchain** (LevelDB com todos os blocos) |
+| **`node.log`** | `~/amzx/amz-network-wizard/run-validator-<CHAIN_ID>/node.log` | Registro de blocos minerados e sincronização de peers |
+
+---
+
+### 3. Comandos Utilitários na Raiz do Repositório (`~/amzx/`):
+
+| Script | Caminho Exato | Função |
+| :--- | :--- | :--- |
+| **`setup-autostart.sh`** | `~/amzx/setup-autostart.sh` | Configura o systemd para reiniciar tudo sozinho no boot da VPS |
+| **`amzx-doctor.sh`** | `~/amzx/amzx-doctor.sh` | Ferramenta de auditoria, diagnóstico de portas e auto-cura |
+| **`join-network.sh`** | `~/amzx/join-network.sh` | Assistente interativo de entrada de novos validadores na rede |
+
+---
+
+### 💡 Como Ir Diretamente Para a Pasta do seu Nó em 1 Comando:
+
+Se você não tiver certeza de qual foi o nome exato da pasta gerada, execute no terminal do seu VPS:
+```bash
+cd $(dirname $(find ~ -name "start-node.sh" | head -n 1))
+pwd
+```
+Isso entrará **automaticamente** na pasta exata onde estão o `start-node.sh`, `stop-node.sh` e o banco de dados da sua blockchain!
 
 ---
 
@@ -57,9 +114,17 @@ Para resolver isso de forma definitiva, disponibilizamos o script automatizador 
 Este é o padrão criado pelo assistente interativo (`amz-network-wizard/init-network.sh` ou `join-network.sh`).
 
 ### Passo 1: Parar o Nó Graciosa e Seguramente
-Acesse o diretório onde o nó está executando:
+Acesse o diretório exato onde o nó está executando:
 ```bash
-cd ~/amzx-network-pro/node # (ou o seu diretório de execução)
+# Entre na pasta do seu nó:
+# Se foi criado pelo init-network.sh:
+cd ~/amzx/amz-network-wizard/run-amzx-*
+
+# OU se foi criado pelo join-network.sh:
+cd ~/amzx/amz-network-wizard/run-validator-*
+
+# Dica: comando universal para navegar diretamente à pasta certa:
+cd $(dirname $(find ~ -name "start-node.sh" | head -n 1))
 
 # Se existir o script de parada:
 ./stop-node.sh
