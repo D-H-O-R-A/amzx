@@ -1145,18 +1145,68 @@ cat <<EOF > "$START_NODE_SCRIPT"
 #!/usr/bin/env bash
 # Startup script for AMZX Private Node
 
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+
+# Se amzx-node estiver ativo no systemd e não for chamada interna, notificar e não duplicar
+if [ "\$1" != "--systemd" ] && command -v systemctl &>/dev/null && systemctl is-active --quiet amzx-node; then
+    echo -e "\033[1;33m⚠️  O nó AMZX já está rodando em segundo plano via systemd (amzx-node.service)!\033[0m"
+    echo -e "   Para ver os logs em tempo real: \033[1;36mtail -f \$SCRIPT_DIR/node.log\033[0m"
+    echo -e "   Para reiniciar: \033[1;36msystemctl restart amzx-node\033[0m"
+    echo -e "   Para parar:     \033[1;36msystemctl stop amzx-node\033[0m"
+    exit 0
+fi
+
+# Matar instâncias antigas ou suspensas (Ctrl+Z) para liberar o RocksDB LOCK
+CURRENT_PID=\$\$
+OLD_PIDS=\$(pgrep -f "com.wavesplatform.Application.*\$SCRIPT_DIR/blockchain.conf" 2>/dev/null | grep -v "^\$CURRENT_PID\$" || true)
+if [ -n "\$OLD_PIDS" ]; then
+    echo -e "\033[1;33mFinalizando instância anterior pendente (PIDs: \$OLD_PIDS) para liberar o RocksDB LOCK...\033[0m"
+    kill -9 \$OLD_PIDS 2>/dev/null || true
+    sleep 1
+fi
+
 echo -e "\033[1;32mStarting AMZX Node with Chain ID '$CHAIN_ID' and REST API Port '$REST_API_PORT'...\033[0m"
 
 export JAVA_HOME="$JAVA_HOME"
 export PATH=\$JAVA_HOME/bin:\$PATH
 
-java \\
+exec java \\
   --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \\
   --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED \\
   -cp "$FAT_JAR:$RUN_DIR/lib/*" \\
   com.wavesplatform.Application "$BLOCKCHAIN_CONF_PATH"
 EOF
 chmod 700 "$START_NODE_SCRIPT"
+
+# Stop Node script
+cat <<EOF > "$RUN_DIR/stop-node.sh"
+#!/usr/bin/env bash
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+echo "Parando nó AMZX..."
+if command -v systemctl &>/dev/null && systemctl list-unit-files 2>/dev/null | grep -q "amzx-node"; then
+    sudo systemctl stop amzx-node 2>/dev/null || true
+fi
+pkill -9 -f "com.wavesplatform.Application.*\$SCRIPT_DIR/blockchain.conf" 2>/dev/null || true
+echo "Nó parado com sucesso."
+EOF
+chmod 700 "$RUN_DIR/stop-node.sh"
+
+# Stop All script
+cat <<EOF > "$RUN_DIR/stop-all.sh"
+#!/usr/bin/env bash
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+echo "Parando todos os serviços AMZX (Node, Matcher, Data Service)..."
+if command -v systemctl &>/dev/null; then
+    sudo systemctl stop amzx-matcher 2>/dev/null || true
+    sudo systemctl stop amzx-node 2>/dev/null || true
+fi
+pkill -9 -f "com.wavesplatform.Application.*\$SCRIPT_DIR/blockchain.conf" 2>/dev/null || true
+pkill -9 -f "sbt.*dex/run" 2>/dev/null || true
+pkill -9 -f "com.wavesplatform.dex.Application" 2>/dev/null || true
+pkill -9 -f "node.*data-service" 2>/dev/null || true
+echo "Todos os serviços foram parados com sucesso."
+EOF
+chmod 700 "$RUN_DIR/stop-all.sh"
 
 # Start Matcher script
 START_MATCHER_SCRIPT="$RUN_DIR/start-matcher.sh"
@@ -1227,7 +1277,7 @@ Wants=network-online.target
 Type=simple
 User=$SYSTEM_USER
 WorkingDirectory=$RUN_DIR
-ExecStart=/usr/bin/env bash $START_NODE_SCRIPT
+ExecStart=/usr/bin/env bash $START_NODE_SCRIPT --systemd
 Restart=always
 RestartSec=5s
 SuccessExitStatus=143
