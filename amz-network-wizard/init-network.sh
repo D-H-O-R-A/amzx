@@ -431,7 +431,7 @@ if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
     echo -e "${GREEN}${BOLD}Compilações completadas com sucesso! Continuando configuração...${NC}"
   else
     echo -e "⚠️  ${RED}Prosseguindo sem o Fat JAR. O script de inicialização do nó start-node.sh pode não funcionar até que você o compile manualmente.${NC}"
-    FAT_JAR="$WAVES_SRC_DIR/node/target/waves-all-1.6.4.jar" # default placeholder
+    FAT_JAR="$WAVES_SRC_DIR/node/target/waves-all-1.7.0.jar" # default placeholder
   fi
 fi
 

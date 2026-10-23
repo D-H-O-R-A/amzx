@@ -148,7 +148,7 @@ NODE_ONLINE=false
 if ss -tulpn 2>/dev/null | grep -q ":$REST_PORT " || curl -s -m 2 http://127.0.0.1:$REST_PORT/node/version &>/dev/null; then
     NODE_ONLINE=true
     HEIGHT=$(curl -s -m 2 http://127.0.0.1:$REST_PORT/blocks/height 2>/dev/null | grep -o '"height":[0-9]*' | cut -d':' -f2 || echo "Ativo")
-    VERSION=$(curl -s -m 2 http://127.0.0.1:$REST_PORT/node/version 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4 || echo "AMZX 1.6")
+    VERSION=$(curl -s -m 2 http://127.0.0.1:$REST_PORT/node/version 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4 || echo "AMZX 1.7.0")
     echo -e "  - Status do Nó:      🟢 ${GREEN}${BOLD}ONLINE (Porta $REST_PORT)${NC}"
     echo -e "  - Altura Atual:      🧱 ${CYAN}Bloco $HEIGHT${NC}"
     echo -e "  - Versão do Nó:      📦 ${CYAN}$VERSION${NC}"

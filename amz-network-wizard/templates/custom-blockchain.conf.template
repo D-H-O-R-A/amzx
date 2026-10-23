@@ -80,7 +80,7 @@ waves {
   miner {
     enable = yes
     quorum = 0
-    interval-after-last-block-then-generation-is-allowed = 999999d
+    interval-after-last-block-then-generation-is-allowed = 1000d
     micro-block-interval = 5s
     minimal-generation-offset = 0s
     private-keys = ["__PRIVATE_KEY__"]
