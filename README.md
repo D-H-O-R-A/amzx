@@ -194,7 +194,7 @@ O ecossistema AMZX está em constante evolução tecnológica, combinando o melh
 
 For inquiries, support, integration consulting, or commercial collaborations, reach out to the project developer:
 
-- **Developer:** Diego Antunes
+- **Developer:** [Diego Oris](https://diegooris.ch)
 - **Email:** [diegoantunes2301@gmail.com](mailto:diegoantunes2301@gmail.com)
 - **WhatsApp:** [+55 (11) 97428-9097](https://wa.me/5511974289097)
 - **GitHub Repository:** [https://github.com/D-H-O-R-A/amzx](https://github.com/D-H-O-R-A/amzx)
