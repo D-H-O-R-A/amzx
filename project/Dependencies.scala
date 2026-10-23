@@ -6,7 +6,7 @@ import scalapb.compiler.Version.scalapbVersion
 object Dependencies {
   private def nettyModule(module: String) = "io.netty" % s"netty-$module" % "4.2.17.Final"
 
-  val gProtoVersion = "4.36.0"
+  val gProtoVersion = "4.36.2"
   val gProto        = "com.google.protobuf" % "protobuf-java" % Dependencies.gProtoVersion
   val overrides = Def.setting(
     Seq(
@@ -26,7 +26,7 @@ object Dependencies {
       jacksonModule("core", "databind"),
       jacksonModule("datatype", "datatype-jdk8"),
       jacksonModule("datatype", "datatype-jsr310"),
-      "tools.jackson.core" % "jackson-databind" % "3.1.4",
+      "tools.jackson.core" % "jackson-databind" % "3.2.4",
       gProto
     )
   )
@@ -50,10 +50,10 @@ object Dependencies {
   private def grpcModule(module: String) = "io.grpc" % module % "1.83.1"
 
   val pekkoHttp       = pekkoHttpModule("pekko-http")
-  val googleGuava     = "com.google.guava"    % "guava"             % "33.7.1-jre"
+  val googleGuava     = "com.google.guava"    % "guava"             % "33.7.2-jre"
   val kamonCore       = kamonModule("core")
   val machinist       = "org.typelevel"      %% "machinist"         % "0.6.8"
-  val logback         = "ch.qos.logback"      % "logback-classic"   % "1.6.3"
+  val logback         = "ch.qos.logback"      % "logback-classic"   % "1.6.5"
   val asyncHttpClient = "org.asynchttpclient" % "async-http-client" % "3.0.13"
   val curve25519      = "com.wavesplatform"   % "curve25519-java"   % "0.6.6"
   val nettyHandler    = nettyModule("handler")
@@ -187,7 +187,7 @@ object Dependencies {
   lazy val rideRunner = Def.setting(
     Seq(
       rocksdb,
-      "com.github.ben-manes.caffeine" % "caffeine"                 % "3.2.4",
+      "com.github.ben-manes.caffeine" % "caffeine"                 % "3.3.1",
       "net.logstash.logback"          % "logstash-logback-encoder" % "9.0" % Runtime,
       kamonModule("caffeine"),
       kamonModule("prometheus"),
