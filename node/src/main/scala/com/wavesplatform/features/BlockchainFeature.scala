@@ -30,6 +30,7 @@ object BlockchainFeatures {
   val EcrecoverFix                    = BlockchainFeature(24, "ecrecover fix")
   val DeterministicFinality           = BlockchainFeature(25, "Deterministic Finality & RIDE V9")
   val AdjustedBlockRewardDistribution = BlockchainFeature(26, "Adjusted Block Reward Distribution")
+  val HighPrecisionAssets             = BlockchainFeature(29, "High-Precision BigInt Assets & ERC-20 Support")
 
   // Not exposed
   val ContinuationTransaction = BlockchainFeature(27, "Continuation Transaction")
@@ -64,7 +65,8 @@ object BlockchainFeatures {
     BoostBlockReward,
     EcrecoverFix,
     DeterministicFinality,
-    AdjustedBlockRewardDistribution
+    AdjustedBlockRewardDistribution,
+    HighPrecisionAssets
   ).map(f => f.id -> f).toMap
 
   val implemented: Set[Short] = dict.keySet
