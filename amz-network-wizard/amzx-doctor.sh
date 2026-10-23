@@ -192,11 +192,11 @@ if [ -n "$RUN_DIR" ] && [ -f "$RUN_DIR/blockchain.conf" ]; then
         echo -e "  ✅ ${GREEN}blockchain.conf sanitizado sem feature 26.${NC}"
     fi
 
-    # Auto-curar timeout de mineração
-    if grep -q 'interval-after-last-block-then-generation-is-allowed = 120h' "$RUN_DIR/blockchain.conf" 2>/dev/null; then
-        echo -e "  ⚠️  ${YELLOW}Detectado intervalo restritivo de 120h para mineração. Corrigindo para 999999d...${NC}"
-        sed -i 's/120h/999999d/g' "$RUN_DIR/blockchain.conf"
-        echo -e "  ✅ ${GREEN}blockchain.conf atualizado com mineração contínua (999999d).${NC}"
+    # Auto-curar timeout de mineração (evitar estouro de nanosegundos Long.MaxValue no PureConfig)
+    if grep -qE 'interval-after-last-block-then-generation-is-allowed\s*=\s*(120h|999999d)' "$RUN_DIR/blockchain.conf" 2>/dev/null; then
+        echo -e "  ⚠️  ${YELLOW}Detectado intervalo de mineração inválido/restritivo. Corrigindo para 1000d...${NC}"
+        sed -i -E 's/interval-after-last-block-then-generation-is-allowed\s*=\s*(120h|999999d)/interval-after-last-block-then-generation-is-allowed = 1000d/g' "$RUN_DIR/blockchain.conf"
+        echo -e "  ✅ ${GREEN}blockchain.conf atualizado com mineração contínua segura (1000d).${NC}"
     fi
 
     # Auto-curar JAR desatualizado em start-node.sh

@@ -94,9 +94,9 @@ if [ -f "$NODE_DIR/blockchain.conf" ]; then
         echo -e "  ⚠️  ${YELLOW}Removendo incompatibilidade de feature 26 em blockchain.conf...${NC}"
         sed -i 's/, 26 = 0//g' "$NODE_DIR/blockchain.conf"
     fi
-    if grep -q 'interval-after-last-block-then-generation-is-allowed = 120h' "$NODE_DIR/blockchain.conf" 2>/dev/null; then
-        echo -e "  ⚠️  ${YELLOW}Garantindo mineração contínua (999999d) em blockchain.conf...${NC}"
-        sed -i 's/120h/999999d/g' "$NODE_DIR/blockchain.conf"
+    if grep -qE 'interval-after-last-block-then-generation-is-allowed\s*=\s*(120h|999999d)' "$NODE_DIR/blockchain.conf" 2>/dev/null; then
+        echo -e "  ⚠️  ${YELLOW}Garantindo mineração contínua segura (1000d) em blockchain.conf...${NC}"
+        sed -i -E 's/interval-after-last-block-then-generation-is-allowed\s*=\s*(120h|999999d)/interval-after-last-block-then-generation-is-allowed = 1000d/g' "$NODE_DIR/blockchain.conf"
     fi
 fi
 

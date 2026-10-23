@@ -1021,7 +1021,7 @@ if "network" in content:
 content = re.sub(r",\s*26\s*=\s*0", "", content)
 
 # 5. Ensure resilient mining settings
-content = re.sub(r"interval-after-last-block-then-generation-is-allowed\s*=\s*[0-9]+[hdms]", "interval-after-last-block-then-generation-is-allowed = 999999d", content)
+content = re.sub(r"interval-after-last-block-then-generation-is-allowed\s*=\s*[0-9]+[hdms]", "interval-after-last-block-then-generation-is-allowed = 1000d", content)
 content = re.sub(r"quorum\s*=\s*[1-9][0-9]*", "quorum = 0", content)
 
 with open(blockchain_conf, "w", encoding="utf-8") as f:
