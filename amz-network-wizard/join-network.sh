@@ -40,13 +40,16 @@ fi
 JAVA_VERSION=$(java -version 2>&1 | head -n 1)
 echo -e "  - Java Runtime:      🟢 ${GREEN}$JAVA_VERSION${NC}"
 
-# Localizar Fat JAR do Nó
-FAT_JAR=$(find "$PROJECT_ROOT/node/target" "$SCRIPT_DIR/.." -name "waves-all-*.jar" 2>/dev/null | head -n 1)
+# Localizar Fat JAR do Nó (prioriza o mais recente em node/target)
+FAT_JAR=$(ls -t "$PROJECT_ROOT/node/target"/waves-all-*.jar 2>/dev/null | head -n 1)
+if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
+    FAT_JAR=$(ls -t $(find "$PROJECT_ROOT" -name "waves-all-*.jar" 2>/dev/null) 2>/dev/null | head -n 1)
+fi
 if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
     echo -e "  ⚠️  ${YELLOW}Fat JAR do nó não encontrado. Compilando com SBT...${NC}"
     cd "$PROJECT_ROOT"
     sbt node/assembly
-    FAT_JAR=$(find "$PROJECT_ROOT/node/target" -name "waves-all-*.jar" | head -n 1)
+    FAT_JAR=$(ls -t "$PROJECT_ROOT/node/target"/waves-all-*.jar 2>/dev/null | head -n 1)
     if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
         echo -e "${RED}${BOLD}[ERRO] Falha ao compilar o Fat JAR do nó AMZX.${NC}"
         exit 1

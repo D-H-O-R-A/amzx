@@ -397,10 +397,10 @@ fi
 export JAVA_HOME="$JAVA_HOME"
 export PATH=$JAVA_HOME/bin:$PATH
 
-# Locate the compiled AMZX Node Fat JAR (always search for it)
-FAT_JAR=$(find "$WAVES_SRC_DIR/node/target" -name "waves-all*.jar" 2>/dev/null | head -n 1)
+# Locate the compiled AMZX Node Fat JAR (always search for the newest in node/target first)
+FAT_JAR=$(ls -t "$WAVES_SRC_DIR/node/target"/waves-all*.jar 2>/dev/null | head -n 1)
 if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
-  FAT_JAR=$(find "$WAVES_SRC_DIR" -name "waves-all*.jar" 2>/dev/null | head -n 1)
+  FAT_JAR=$(ls -t $(find "$WAVES_SRC_DIR" -name "waves-all*.jar" 2>/dev/null) 2>/dev/null | head -n 1)
 fi
 
 if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
@@ -415,7 +415,10 @@ if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
       echo -e "${RED}${BOLD}[ERROR] Falha ao compilar o AMZX Node.${NC}"
       exit 1
     fi
-    FAT_JAR=$(find "$WAVES_SRC_DIR" -name "waves-all*.jar" | head -n 1)
+    FAT_JAR=$(ls -t "$WAVES_SRC_DIR/node/target"/waves-all*.jar 2>/dev/null | head -n 1)
+    if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
+      FAT_JAR=$(ls -t $(find "$WAVES_SRC_DIR" -name "waves-all*.jar" 2>/dev/null) 2>/dev/null | head -n 1)
+    fi
     
     echo -e "${CYAN}Compilando AMZX Matcher DEX...${NC}"
     cd "$MATCHER_SRC_DIR"
@@ -656,7 +659,10 @@ if [ -f "$ASSET_SCALA_PATH" ]; then
     fi
     
     cd "$WIZARD_DIR"
-    FAT_JAR=$(find "$WAVES_SRC_DIR" -name "waves-all*.jar" | head -n 1)
+    FAT_JAR=$(ls -t "$WAVES_SRC_DIR/node/target"/waves-all*.jar 2>/dev/null | head -n 1)
+    if [ -z "$FAT_JAR" ] || [ ! -f "$FAT_JAR" ]; then
+      FAT_JAR=$(ls -t $(find "$WAVES_SRC_DIR" -name "waves-all*.jar" 2>/dev/null) 2>/dev/null | head -n 1)
+    fi
     echo -e "${GREEN}${BOLD}Compilações completadas com sucesso! Moeda nativa '$COIN_NAME' aplicada com sucesso!${NC}"
     echo
   fi
@@ -1010,6 +1016,13 @@ if "network" in content:
         if network_match:
             target = network_match.group(1)
             content = content.replace(target, target + f"\n    declared-address = \"{my_public_ip}:{p2p_port}\"\n    enable-peers-exchange = yes")
+
+# 4. Strip unreleased feature 26 from pre-activated-features
+content = re.sub(r",\s*26\s*=\s*0", "", content)
+
+# 5. Ensure resilient mining settings
+content = re.sub(r"interval-after-last-block-then-generation-is-allowed\s*=\s*[0-9]+[hdms]", "interval-after-last-block-then-generation-is-allowed = 999999d", content)
+content = re.sub(r"quorum\s*=\s*[1-9][0-9]*", "quorum = 0", content)
 
 with open(blockchain_conf, "w", encoding="utf-8") as f:
     f.write(content)
