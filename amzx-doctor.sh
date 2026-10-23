@@ -184,6 +184,31 @@ if [ -n "$RUN_DIR" ] && [ -f "$RUN_DIR/blockchain.conf" ]; then
         sed -i '/network {/,/}/ s/bind-address = "127.0.0.1"/bind-address = "0.0.0.0"/' "$RUN_DIR/blockchain.conf"
         echo -e "  ✅ ${GREEN}blockchain.conf atualizado com bind-address = '0.0.0.0'.${NC}"
     fi
+
+    # Auto-curar incompatibilidade de Feature 26 não implementada
+    if grep -q ', 26 = 0' "$RUN_DIR/blockchain.conf" 2>/dev/null; then
+        echo -e "  ⚠️  ${YELLOW}Detectada flag '26 = 0' em pre-activated-features. Corrigindo incompatibilidade...${NC}"
+        sed -i 's/, 26 = 0//g' "$RUN_DIR/blockchain.conf"
+        echo -e "  ✅ ${GREEN}blockchain.conf sanitizado sem feature 26.${NC}"
+    fi
+
+    # Auto-curar timeout de mineração
+    if grep -q 'interval-after-last-block-then-generation-is-allowed = 120h' "$RUN_DIR/blockchain.conf" 2>/dev/null; then
+        echo -e "  ⚠️  ${YELLOW}Detectado intervalo restritivo de 120h para mineração. Corrigindo para 999999d...${NC}"
+        sed -i 's/120h/999999d/g' "$RUN_DIR/blockchain.conf"
+        echo -e "  ✅ ${GREEN}blockchain.conf atualizado com mineração contínua (999999d).${NC}"
+    fi
+
+    # Auto-curar JAR desatualizado em start-node.sh
+    NEWEST_JAR=$(ls -t "$SCRIPT_DIR/node/target"/waves-all*.jar 2>/dev/null | head -n 1)
+    if [ -n "$NEWEST_JAR" ] && [ -f "$RUN_DIR/start-node.sh" ]; then
+        CURRENT_JAR_IN_SCRIPT=$(grep -oE '/[^: ]+waves-all-[^: ]+\.jar' "$RUN_DIR/start-node.sh" | head -n 1 || true)
+        if [ -n "$CURRENT_JAR_IN_SCRIPT" ] && [ "$CURRENT_JAR_IN_SCRIPT" != "$NEWEST_JAR" ] && [ -f "$NEWEST_JAR" ]; then
+            echo -e "  ⚠️  ${YELLOW}start-node.sh aponta para JAR antigo ($CURRENT_JAR_IN_SCRIPT). Atualizando para $(basename "$NEWEST_JAR")...${NC}"
+            sed -i "s|$CURRENT_JAR_IN_SCRIPT|$NEWEST_JAR|g" "$RUN_DIR/start-node.sh"
+            echo -e "  ✅ ${GREEN}start-node.sh atualizado para o binário mais recente.${NC}"
+        fi
+    fi
 fi
 
 if ss -tulpn 2>/dev/null | grep -E "(0\.0\.0\.0|\*):$P2P_PORT "; then

@@ -88,6 +88,28 @@ echo -e "📁 ${GREEN}Diretório do Nó Localizado:${NC} ${BOLD}$NODE_DIR${NC}"
 echo -e "👤 ${GREEN}Usuário do Serviço:${NC}        ${BOLD}$SYSTEM_USER${NC}"
 echo
 
+# Auto-sanitizar configurações e binários antes de provisionar systemd
+if [ -f "$NODE_DIR/blockchain.conf" ]; then
+    if grep -q ', 26 = 0' "$NODE_DIR/blockchain.conf" 2>/dev/null; then
+        echo -e "  ⚠️  ${YELLOW}Removendo incompatibilidade de feature 26 em blockchain.conf...${NC}"
+        sed -i 's/, 26 = 0//g' "$NODE_DIR/blockchain.conf"
+    fi
+    if grep -q 'interval-after-last-block-then-generation-is-allowed = 120h' "$NODE_DIR/blockchain.conf" 2>/dev/null; then
+        echo -e "  ⚠️  ${YELLOW}Garantindo mineração contínua (999999d) em blockchain.conf...${NC}"
+        sed -i 's/120h/999999d/g' "$NODE_DIR/blockchain.conf"
+    fi
+fi
+
+# Auto-atualizar start-node.sh para o JAR mais recente se houver um novo compilado
+NEWEST_JAR=$(ls -t "$SCRIPT_DIR/node/target"/waves-all*.jar 2>/dev/null | head -n 1)
+if [ -n "$NEWEST_JAR" ] && [ -f "$NODE_DIR/start-node.sh" ]; then
+    CURRENT_JAR_IN_SCRIPT=$(grep -oE '/[^: ]+waves-all-[^: ]+\.jar' "$NODE_DIR/start-node.sh" | head -n 1 || true)
+    if [ -n "$CURRENT_JAR_IN_SCRIPT" ] && [ "$CURRENT_JAR_IN_SCRIPT" != "$NEWEST_JAR" ] && [ -f "$NEWEST_JAR" ]; then
+        echo -e "  ⚠️  ${YELLOW}start-node.sh atualizado para o binário mais recente: $(basename "$NEWEST_JAR")${NC}"
+        sed -i "s|$CURRENT_JAR_IN_SCRIPT|$NEWEST_JAR|g" "$NODE_DIR/start-node.sh"
+    fi
+fi
+
 # 3. Configurar amzx-node.service
 echo -e "⚙️  ${CYAN}Configurando serviço systemd: ${BOLD}amzx-node.service${NC}..."
 $SUDO_CMD bash -c "cat <<EOF > /etc/systemd/system/amzx-node.service
