@@ -958,15 +958,15 @@ if [ "$REUSE_EXISTING_CONFIG" = true ]; then
     cat <<EOF > "$TEMP_JAVA_DIR/KeyDeriver.java"
 public class KeyDeriver {
     public static void main(String[] args) throws Exception {
-        scala.util.Either either = com.wavesplatform.account.KeyPair$.MODULE$.fromSeed(args[0]);
-        if (either.isRight()) {
-            com.wavesplatform.account.SeedKeyPair kp = (com.wavesplatform.account.SeedKeyPair) either.right().get();
-            String base58PrivKey = com.wavesplatform.common.utils.Base58$.MODULE$.encode(kp.privateKey().arr());
-            System.out.println("RESULT_KEY:" + base58PrivKey);
-        } else {
-            System.err.println("Error deriving key");
-            System.exit(1);
+        byte[] seedBytes;
+        try {
+            seedBytes = com.wavesplatform.common.utils.Base58$.MODULE$.decode(args[0]);
+        } catch (Exception e) {
+            seedBytes = args[0].getBytes(java.nio.charset.StandardCharsets.UTF_8);
         }
+        com.wavesplatform.account.SeedKeyPair kp = com.wavesplatform.wallet.Wallet$.MODULE$.generateNewAccount(seedBytes, 0);
+        String base58PrivKey = com.wavesplatform.common.utils.Base58$.MODULE$.encode(kp.privateKey().arr());
+        System.out.println("RESULT_KEY:" + base58PrivKey);
     }
 }
 EOF

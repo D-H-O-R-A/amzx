@@ -209,6 +209,40 @@ if [ -n "$RUN_DIR" ] && [ -f "$RUN_DIR/blockchain.conf" ]; then
             echo -e "  ✅ ${GREEN}start-node.sh atualizado para o binário mais recente.${NC}"
         fi
     fi
+
+    # Auto-curar chave privada de mineração (garantir conta Genesis com saldo para validação de blocos)
+    SEED_BASE58=$(grep -E '^[[:space:]]*seed[[:space:]]*=' "$RUN_DIR/blockchain.conf" 2>/dev/null | sed -E 's/.*=[[:space:]]*"([^"]+)".*/\1/')
+    if [ -n "$SEED_BASE58" ] && [ -n "$NEWEST_JAR" ] && [ -f "$NEWEST_JAR" ]; then
+        TEMP_DOC_DIR=$(mktemp -d -p "/tmp")
+        cat <<EOF > "$TEMP_DOC_DIR/KeyDeriver.java"
+public class KeyDeriver {
+    public static void main(String[] args) throws Exception {
+        byte[] seedBytes;
+        try {
+            seedBytes = com.wavesplatform.common.utils.Base58$.MODULE$.decode(args[0]);
+        } catch (Exception e) {
+            seedBytes = args[0].getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
+        com.wavesplatform.account.SeedKeyPair kp = com.wavesplatform.wallet.Wallet$.MODULE$.generateNewAccount(seedBytes, 0);
+        String base58PrivKey = com.wavesplatform.common.utils.Base58$.MODULE$.encode(kp.privateKey().arr());
+        System.out.println("RESULT_KEY:" + base58PrivKey);
+    }
+}
+EOF
+        javac -cp "$NEWEST_JAR" "$TEMP_DOC_DIR/KeyDeriver.java" 2>/dev/null || true
+        if [ -f "$TEMP_DOC_DIR/KeyDeriver.class" ]; then
+            CORRECT_PRIVKEY=$(java -cp "$TEMP_DOC_DIR:$NEWEST_JAR" KeyDeriver "$SEED_BASE58" 2>/dev/null | grep "RESULT_KEY:" | cut -d':' -f2 | tr -d '[:space:]')
+            if [ -n "$CORRECT_PRIVKEY" ]; then
+                CURRENT_PRIVKEY=$(grep -oE 'private-keys\s*=\s*\["[^"]+"\]' "$RUN_DIR/blockchain.conf" | sed -E 's/.*\["([^"]+)"\].*/\1/')
+                if [ -n "$CURRENT_PRIVKEY" ] && [ "$CURRENT_PRIVKEY" != "$CORRECT_PRIVKEY" ]; then
+                    echo -e "  ⚠️  ${YELLOW}Detectada chave de mineração incorreta ($CURRENT_PRIVKEY). Corrigindo para chave válida da conta Genesis...${NC}"
+                    sed -i "s|$CURRENT_PRIVKEY|$CORRECT_PRIVKEY|g" "$RUN_DIR/blockchain.conf"
+                    echo -e "  ✅ ${GREEN}blockchain.conf atualizado com a chave privada de mineração correta do Genesis.${NC}"
+                fi
+            fi
+        fi
+        rm -rf "$TEMP_DOC_DIR"
+    fi
 fi
 
 if ss -tulpn 2>/dev/null | grep -E "(0\.0\.0\.0|\*):$P2P_PORT "; then
