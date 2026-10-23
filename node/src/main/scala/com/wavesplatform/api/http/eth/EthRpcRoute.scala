@@ -344,7 +344,7 @@ class EthRpcRoute(
                 Future.successful(respObj(id, encodeResponse(new Uint8(dec))))
 
               case "18160ddd" => // totalSupply()
-                val supply = assetDescription(contractAddress).fold(BigInteger.ZERO)(d => BigInteger.valueOf(d.totalVolume.toLong))
+                val supply = assetDescription(contractAddress).fold(BigInteger.ZERO)(_.totalVolume.bigInteger)
                 Future.successful(respObj(id, encodeResponse(new Uint256(supply))))
 
               case "70a08231" => // balanceOf(address)
